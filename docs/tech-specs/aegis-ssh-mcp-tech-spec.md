@@ -354,6 +354,12 @@ Registry:
 
 - `ghcr.io/sparksbenjamin/aegis-ssh-mcp`
 
+Operator quick-start expectation:
+
+- the primary deployment path is Docker Compose
+- operators should be able to deploy from the published GHCR image without building from source
+- README quick start should stay copy-paste friendly and center on host-mounted config, rule, key, and cert paths
+
 Compose behavior:
 
 - pulls from GHCR instead of building locally

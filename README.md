@@ -37,34 +37,30 @@ The bearer token selects which host tools that client can use.
 
 ## Quick Start
 
-### 1. Clone the repo
+You do not need to build this project from source to deploy it.
+The quick-start path is: pull the published image, mount your config paths, and start Docker Compose.
 
-```bash
-git clone https://github.com/sparksbenjamin/Aegis-SSH-MCP.git
-cd Aegis-SSH-MCP
-```
+### 1. Create host folders
 
-### 2. Add SSH keys
+Create folders anywhere on your host for:
 
-Place private keys in `keys/`.
-
-Examples:
-
-```text
-keys/proxmox.pem
-keys/dell-r820.pem
-```
-
-Keep them out of git.
-
-### 3. Add or edit host configs
-
-Host configs live in `configs/`.
-Each host can define one or more `api_keys`.
-These values are used as accepted bearer tokens.
-If the same token appears on multiple hosts, that token will see all of those host tools.
+- host configs
+- rule files
+- SSH keys
+- TLS certs
 
 Example:
+
+```text
+/opt/aegis/configs
+/opt/aegis/rules
+/opt/aegis/keys
+/opt/aegis/certs
+```
+
+### 2. Add a host config
+
+Save a file such as `/opt/aegis/configs/my-server.json`:
 
 ```json
 {
@@ -77,76 +73,84 @@ Example:
   "rule_profile": "readonly-safe",
   "timeout_seconds": 30,
   "api_keys": [
-    "change-me-my-server-key",
-    "change-me-shared-ops-key"
+    "change-me-my-server-token"
   ]
 }
 ```
 
-Important notes:
+Important:
 
 - `alias` must be unique
-- `auth_method` must be `key` or `password`
-- `key_path` is required for key auth
-- `password` is required for password auth
-- `api_keys` are optional for local stdio use, but required if you want HTTPS SSE access
-- for HTTPS SSE, clients must send those values as `Authorization: Bearer <token>`
+- `key_path` must match the container path, not the host path
+- `api_keys` are the bearer tokens your MCP clients will use
+- clients must send them as `Authorization: Bearer <token>`
 
-### 4. Choose a rule profile
+### 3. Add your SSH key and TLS certs
 
-Rule profiles live in `rules/`.
-Included examples:
-
-- `rules/readonly-safe.json`
-- `rules/docker-readonly.json`
-- `rules/docker-ops.json`
-
-Rules validate the executable, arguments, and legacy full-command patterns before SSH is attempted.
-
-### 5. Add TLS certificates
-
-The HTTPS SSE deployment expects:
+Expected container paths:
 
 ```text
-certs/tls.crt
-certs/tls.key
+/keys/my-server.pem
+/certs/tls.crt
+/certs/tls.key
 ```
 
-For a quick local certificate:
+Quick self-signed cert example:
 
 ```bash
-openssl req -x509 -nodes -newkey rsa:2048 -keyout certs/tls.key -out certs/tls.crt -days 365 -subj "/CN=localhost"
+openssl req -x509 -nodes -newkey rsa:2048 -keyout /opt/aegis/certs/tls.key -out /opt/aegis/certs/tls.crt -days 365 -subj "/CN=localhost"
 ```
 
-For real deployments, use a certificate that matches the hostname in `AEGIS_SSE_BASE_URL`.
+### 4. Copy this Docker Compose file
 
-### 6. Start the published container
+Save this as `docker-compose.yml` and replace the host paths with yours:
 
-Pull the image:
+```yaml
+services:
+  aegis-ssh-mcp:
+    image: ghcr.io/sparksbenjamin/aegis-ssh-mcp:latest
+    pull_policy: always
+    container_name: aegis-ssh-mcp
+    restart: on-failure:5
+
+    environment:
+      AEGIS_TRANSPORT: sse
+      AEGIS_CONFIGS_DIR: /configs
+      AEGIS_RULES_DIR: /rules
+      AEGIS_SSE_ADDR: ":8443"
+      AEGIS_SSE_BASE_URL: https://aegis.example.com:8443
+      AEGIS_SSE_BASE_PATH: /mcp
+      AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
+      AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
+
+    ports:
+      - "8443:8443"
+
+    volumes:
+      - /opt/aegis/configs:/configs
+      - /opt/aegis/rules:/rules
+      - /opt/aegis/keys:/keys:ro
+      - /opt/aegis/certs:/certs:ro
+```
+
+### 5. Pull and start it
 
 ```bash
 docker compose pull
-```
-
-Start the service:
-
-```bash
 docker compose up -d
-```
-
-Follow logs if needed:
-
-```bash
 docker compose logs -f aegis-ssh-mcp
 ```
 
-By default, `docker-compose.yml` pulls:
+### 6. Connect your MCP client
+
+Use:
 
 ```text
-ghcr.io/sparksbenjamin/aegis-ssh-mcp:latest
+URL: https://aegis.example.com:8443/mcp/sse
+Header: Authorization: Bearer change-me-my-server-token
 ```
 
-Set `AEGIS_IMAGE_TAG` if you want to pin a specific published version.
+That is the deploy path: pull the image, mount your files, and start the container.
 
 ## Docker Compose Settings
 
@@ -167,6 +171,9 @@ AEGIS_IMAGE_TAG=latest
 ```
 
 If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
+
+The repo copy of [docker-compose.yml](docker-compose.yml) uses relative mounts for running from this checkout.
+For real deployments, update the volume `source` paths to your host directories.
 
 ## Connect Your MCP Client
 
