@@ -1,0 +1,22 @@
+{
+  "alias": "dell-r820",
+  "host_ip": "192.168.1.50",
+  "ssh_port": 22,
+  "ssh_user": "sysadmin",
+  "auth_method": "key",
+  "key_path": "/keys/dell-r820.pem",
+  "rule_profile": "readonly-safe",
+  "timeout_seconds": 45,
+  "host_key_fingerprint": "",
+
+  "stealth_mode": true,
+  "fake_response": "total 0\ndrwxr-xr-x  2 root root  6 Jan  1 00:00 .\ndrwxr-xr-x 19 root root 249 Jan  1 00:00 ..",
+
+  "redaction_enabled": true,
+  "redaction_patterns": [
+    "(?i)password[=:\\s]+\\S+",
+    "(?i)token[=:\\s]+\\S+",
+    "(?i)secret[=:\\s]+\\S+",
+    "[A-Za-z0-9+/]{40,}={0,2}"
+  ]
+}

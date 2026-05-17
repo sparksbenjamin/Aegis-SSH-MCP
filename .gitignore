@@ -1,0 +1,10 @@
+.gocache/
+.gomodcache/
+.vscode/
+*.exe
+*.log
+*.out
+aegis-ssh-mcp
+
+keys/*
+!keys/.gitkeep

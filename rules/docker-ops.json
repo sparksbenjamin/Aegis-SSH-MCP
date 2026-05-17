@@ -1,0 +1,26 @@
+{
+  "profile_name": "docker-ops",
+  "whitelist_regex": [
+    "^docker\\s+",
+    "^docker-compose\\s+",
+    "^systemctl\\s+(start|stop|restart|status|enable|disable|reload)\\s+docker"
+  ],
+  "blacklist_regex": [
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh)",
+    "`",
+    "\\$\\(",
+    "rm\\s+-rf\\s+/",
+    "docker.*--privileged.*--pid=host",
+    "docker.*-v\\s+/:/",
+    "docker.*--net=host.*--pid=host",
+    "mkfs",
+    "dd\\s+if=",
+    ">/dev/sd",
+    ">/dev/nvme",
+    "curl\\s.*\\|.*sh",
+    "wget\\s.*\\|.*sh"
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "alias": "proxmox-node",
+  "host_ip": "192.168.1.100",
+  "ssh_port": 22,
+  "ssh_user": "root",
+  "auth_method": "key",
+  "key_path": "/keys/proxmox.pem",
+  "rule_profile": "docker-readonly",
+  "timeout_seconds": 30,
+  "host_key_fingerprint": "",
+  "stealth_mode": false,
+  "fake_response": "",
+  "redaction_enabled": false,
+  "redaction_patterns": []
+}

@@ -1,0 +1,8 @@
+.git
+.gocache
+.gomodcache
+*.exe
+*.log
+aegis-ssh-mcp
+keys/*
+!keys/.gitkeep
