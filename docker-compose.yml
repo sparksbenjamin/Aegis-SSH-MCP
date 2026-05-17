@@ -3,7 +3,7 @@
 #
 # Usage:
 #   docker compose pull
-#   docker compose run --rm -i aegis-ssh-mcp
+#   docker compose up -d
 #
 # By default this service pulls the published image from GitHub Container
 # Registry (GHCR). Set AEGIS_IMAGE_TAG to pin a specific published version.
@@ -16,13 +16,18 @@ services:
     pull_policy: always
     container_name: aegis-ssh-mcp
 
-    # MCP over stdio - stdin/stdout must be kept open.
-    stdin_open: true
-    tty: false
-
     environment:
+      AEGIS_TRANSPORT: sse
       AEGIS_CONFIGS_DIR: /configs
       AEGIS_RULES_DIR: /rules
+      AEGIS_SSE_ADDR: ":${AEGIS_SSE_PORT:-8443}"
+      AEGIS_SSE_BASE_URL: ${AEGIS_SSE_BASE_URL:-https://localhost:8443}
+      AEGIS_SSE_BASE_PATH: /mcp
+      AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
+      AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
+
+    ports:
+      - "${AEGIS_SSE_PORT:-8443}:${AEGIS_SSE_PORT:-8443}"
 
     volumes:
       # Host definitions - writable so fsnotify picks up live changes.
@@ -39,6 +44,12 @@ services:
       - type: bind
         source: ./keys
         target: /keys
+        read_only: true
+
+      # TLS material for HTTPS SSE.
+      - type: bind
+        source: ./certs
+        target: /certs
         read_only: true
 
     cap_drop:

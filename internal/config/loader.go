@@ -37,7 +37,8 @@ type HostConfig struct {
 	RedactionEnabled  bool     `json:"redaction_enabled"`
 	RedactionPatterns []string `json:"redaction_patterns"`
 
-	HostKeyFingerprint string `json:"host_key_fingerprint"`
+	HostKeyFingerprint string   `json:"host_key_fingerprint"`
+	APIKeys            []string `json:"api_keys"`
 }
 
 // Validate normalizes defaults and returns an error if any required field is absent.
@@ -73,6 +74,22 @@ func (h *HostConfig) Validate() error {
 	}
 	if h.TimeoutSeconds == 0 {
 		h.TimeoutSeconds = 30
+	}
+	if len(h.APIKeys) > 0 {
+		seen := make(map[string]struct{}, len(h.APIKeys))
+		normalized := make([]string, 0, len(h.APIKeys))
+		for _, raw := range h.APIKeys {
+			key := strings.TrimSpace(raw)
+			if key == "" {
+				continue
+			}
+			if _, exists := seen[key]; exists {
+				continue
+			}
+			seen[key] = struct{}{}
+			normalized = append(normalized, key)
+		}
+		h.APIKeys = normalized
 	}
 
 	return nil

@@ -66,3 +66,28 @@ func TestScanConfigDirRejectsDuplicateAliases(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestValidateNormalizesAPIKeys(t *testing.T) {
+	t.Parallel()
+
+	cfg := &HostConfig{
+		Alias:       "test-host",
+		HostIP:      "192.168.1.10",
+		SSHUser:     "root",
+		AuthMethod:  AuthMethodKey,
+		KeyPath:     "/keys/test.pem",
+		RuleProfile: "readonly-safe",
+		APIKeys:     []string{" alpha ", "", "beta", "alpha"},
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("validate host config: %v", err)
+	}
+
+	if len(cfg.APIKeys) != 2 {
+		t.Fatalf("expected 2 normalized API keys, got %d", len(cfg.APIKeys))
+	}
+	if cfg.APIKeys[0] != "alpha" || cfg.APIKeys[1] != "beta" {
+		t.Fatalf("unexpected normalized API keys: %v", cfg.APIKeys)
+	}
+}

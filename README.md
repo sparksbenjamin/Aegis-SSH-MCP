@@ -1,56 +1,37 @@
 # Aegis-SSH-MCP
 
-Aegis-SSH-MCP is a Go-based MCP server that gives AI agents tightly controlled SSH access to remote systems.
-Each host is exposed as its own MCP tool, and every command is parsed into argv, validated, normalized into a shell-safe form, and only then executed over SSH.
+Aegis-SSH-MCP is a Go-based MCP gateway that gives AI agents controlled SSH access to remote systems.
+Each host is exposed as its own MCP tool, and every command is parsed, validated, normalized into a shell-safe form, and only then executed over SSH.
+
+## Recommended Connection Model
+
+The recommended way to run Aegis is:
+
+- deploy the published GitHub Container Registry image
+- expose it over `HTTPS`
+- connect to it with MCP over `SSE`
+- use an `api_keys` entry in each host config to control which tools a client can see
+
+In practice, the connection is:
+
+```text
+https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+```
+
+The port selects the Aegis instance.
+The API key selects which host tools that client can use.
 
 ## What You Get
 
 - One MCP tool per host config, such as `aegis_ssh_proxmox-node`
-- Executable and argument validation before any network call is made
-- Optional stealth responses for research and honeypot-style testing
-- Optional output redaction before command results go back to the model
-- Structured JSON audit logs written to `stderr`
-- Hot reload for both `configs/*.json` and `rules/*.json`
-- Automatic Docker image publishing to `ghcr.io/sparksbenjamin/aegis-ssh-mcp`
-
-## Repo Layout
-
-```text
-.
-|-- .github/workflows/     CI and container publishing
-|-- configs/               Host definitions
-|-- docs/tech-specs/       Internal technical notes and handoff docs
-|-- internal/
-|   |-- audit/             Audit logging
-|   |-- command/           Command parsing and shell-safe normalization
-|   |-- config/            Host config loading and validation
-|   |-- mcp/               MCP server wiring and file watchers
-|   |-- rules/             Command rule engine
-|   `-- ssh/               SSH execution layer
-|-- keys/                  SSH private keys (not committed)
-|-- rules/                 Rule profiles
-|-- Dockerfile
-|-- docker-compose.yml
-|-- go.mod
-|-- go.sum
-`-- main.go
-```
-
-## Image Publishing
-
-This repo is set up to build and publish a new Docker image automatically through GitHub Actions.
-
-- Push to `main` -> publishes a fresh `latest` image
-- Push a tag like `v1.2.3` -> publishes a versioned image tag
-- Every publish also gets a `sha-...` image tag
-
-Published image:
-
-```text
-ghcr.io/sparksbenjamin/aegis-ssh-mcp:latest
-```
-
-If GHCR package visibility is private after the first publish, switch it to public in GitHub so `docker compose` can pull it without extra auth.
+- Per-key tool filtering for HTTPS SSE clients
+- Executable and argument validation before any SSH call is made
+- Shell-safe command normalization before execution
+- Optional stealth responses
+- Optional output redaction
+- Structured audit logs on `stderr`
+- Hot reload for `configs/*.json` and `rules/*.json`
+- Automatic GHCR image publishing from GitHub Actions
 
 ## Quick Start
 
@@ -61,9 +42,9 @@ git clone https://github.com/sparksbenjamin/Aegis-SSH-MCP.git
 cd Aegis-SSH-MCP
 ```
 
-### 2. Add your SSH keys
+### 2. Add SSH keys
 
-Put your private keys in `keys/`.
+Place private keys in `keys/`.
 
 Examples:
 
@@ -72,23 +53,15 @@ keys/proxmox.pem
 keys/dell-r820.pem
 ```
 
-Important:
-
-- Keep private keys out of git.
-- Use restrictive permissions where your platform supports them.
-- Update each host config so `key_path` matches the path the runtime will see.
-
-For Docker, that normally means paths like `/keys/proxmox.pem`.
+Keep them out of git.
 
 ### 3. Add or edit host configs
 
 Host configs live in `configs/`.
-Two examples are already included:
+Each host can define one or more `api_keys`.
+If the same key appears on multiple hosts, that key will see all of those host tools.
 
-- `configs/proxmox-node.json`
-- `configs/dell-r820.json`
-
-Example host config:
+Example:
 
 ```json
 {
@@ -99,24 +72,21 @@ Example host config:
   "auth_method": "key",
   "key_path": "/keys/my-server.pem",
   "rule_profile": "readonly-safe",
-  "timeout_seconds": 30
+  "timeout_seconds": 30,
+  "api_keys": [
+    "change-me-my-server-key",
+    "change-me-shared-ops-key"
+  ]
 }
 ```
 
-Required fields:
+Important notes:
 
-- `alias`
-- `host_ip`
-- `ssh_user`
-- `auth_method`
-- `rule_profile`
-
-Notes:
-
-- `alias` must be unique.
-- `auth_method` must be `key` or `password`.
-- `key_path` is required for key auth.
-- `password` is required for password auth.
+- `alias` must be unique
+- `auth_method` must be `key` or `password`
+- `key_path` is required for key auth
+- `password` is required for password auth
+- `api_keys` are optional for local stdio use, but required if you want HTTPS SSE access
 
 ### 4. Choose a rule profile
 
@@ -127,75 +97,100 @@ Included examples:
 - `rules/docker-readonly.json`
 - `rules/docker-ops.json`
 
-Rules work like this:
+Rules validate the executable, arguments, and legacy full-command patterns before SSH is attempted.
 
-1. The input is parsed into an executable plus arguments.
-2. A blacklist runs first and blocks forbidden executables, arguments, or legacy full-command patterns.
-3. A whitelist runs second and only allows approved executables, arguments, and command shapes.
-4. The parsed argv is rebuilt into a shell-safe normalized command before execution.
+### 5. Add TLS certificates
 
-### 5. Run Aegis from the published GitHub image
+The HTTPS SSE deployment expects:
 
-Pull the latest image:
+```text
+certs/tls.crt
+certs/tls.key
+```
+
+For a quick local certificate:
+
+```bash
+openssl req -x509 -nodes -newkey rsa:2048 -keyout certs/tls.key -out certs/tls.crt -days 365 -subj "/CN=localhost"
+```
+
+For real deployments, use a certificate that matches the hostname in `AEGIS_SSE_BASE_URL`.
+
+### 6. Start the published container
+
+Pull the image:
 
 ```bash
 docker compose pull
 ```
 
-Run the service:
+Start the service:
 
 ```bash
-docker compose run --rm -i aegis-ssh-mcp
+docker compose up -d
 ```
 
-To pin a specific published image version, set `AEGIS_IMAGE_TAG` before running compose.
-
-### 6. Local development
-
-If you want to run from source instead of GHCR:
+Follow logs if needed:
 
 ```bash
-go run .
+docker compose logs -f aegis-ssh-mcp
 ```
 
-When run from the repo root, Aegis automatically uses the local `configs/` and `rules/` folders.
+By default, `docker-compose.yml` pulls:
 
-## Connect It To Your MCP Client
+```text
+ghcr.io/sparksbenjamin/aegis-ssh-mcp:latest
+```
 
-Example MCP client configuration using Docker Compose:
+Set `AEGIS_IMAGE_TAG` if you want to pin a specific published version.
+
+## Docker Compose Settings
+
+The compose file is already set up to pull from GHCR and run the HTTPS SSE transport.
+
+Most important settings:
+
+- `AEGIS_SSE_PORT`
+- `AEGIS_SSE_BASE_URL`
+- `AEGIS_IMAGE_TAG`
+
+Example `.env`:
+
+```dotenv
+AEGIS_SSE_PORT=8443
+AEGIS_SSE_BASE_URL=https://aegis.example.com:8443
+AEGIS_IMAGE_TAG=latest
+```
+
+If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
+
+## Connect Your MCP Client
+
+Recommended SSE URL:
+
+```text
+https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+```
+
+Example client config for clients that support SSE URLs directly:
 
 ```json
 {
   "mcpServers": {
     "aegis": {
-      "command": "docker",
-      "args": [
-        "compose",
-        "-f",
-        "/absolute/path/to/Aegis-SSH-MCP/docker-compose.yml",
-        "run",
-        "--rm",
-        "-i",
-        "aegis-ssh-mcp"
-      ]
+      "transport": "sse",
+      "url": "https://aegis.example.com:8443/mcp/sse?apiKey=change-me-shared-ops-key"
     }
   }
 }
 ```
 
-Example MCP client configuration using a local Go run:
+Header-based auth is also supported:
 
-```json
-{
-  "mcpServers": {
-    "aegis": {
-      "command": "go",
-      "args": ["run", "."],
-      "cwd": "/absolute/path/to/Aegis-SSH-MCP"
-    }
-  }
-}
-```
+- `Authorization: Bearer YOUR_KEY`
+- `X-API-Key: YOUR_KEY`
+
+But the query-string form is the safest documented option because some SSE clients do not send auth headers on the initial `GET /sse` request.
 
 ## Tools Exposed
 
@@ -207,30 +202,37 @@ It also exposes:
 
 - `aegis_status`
 
+For HTTPS SSE clients, the visible tool list is filtered by the API key used for that session.
+
+## Local Development
+
+Local stdio mode still works for development:
+
+```bash
+go run .
+```
+
+When run from the repo root, Aegis automatically uses the local `configs/` and `rules/` folders.
+
 ## Security Notes
 
-- Aegis uses single-command SSH sessions. It does not open an interactive shell.
-- If a command fails validation, SSH is never attempted.
-- Shell operators and expansion tricks are not passed through as-is. Aegis executes a normalized command rebuilt from parsed argv.
-- If `host_key_fingerprint` is empty, Aegis falls back to insecure host key verification. That is okay for a lab, not for production.
-- If `redaction_enabled` is true, matching output is replaced with `[REDACTED]`.
-- If `stealth_mode` is true, blocked commands can return a fake response instead of an explicit error.
+- Aegis runs one non-interactive SSH command per request
+- If validation fails, SSH is never attempted
+- Raw shell strings are not executed directly
+- Commands are rebuilt into a normalized shell-safe form before execution
+- If `host_key_fingerprint` is empty, host verification falls back to insecure mode
+- If `redaction_enabled` is true, matching output is replaced with `[REDACTED]`
+- If `stealth_mode` is true, blocked commands can return a fake response
 
-## Hot Reload
-
-- Editing `configs/*.json` updates the live host registry.
-- Editing `rules/*.json` reloads the rule engine.
-- Removing a host config leaves the old tool name visible until the MCP client refreshes, but calls to it will fail safely.
-
-## Development
+## Development Checks
 
 ```bash
 go test ./...
-go build ./...
+go build -buildvcs=false ./...
 ```
 
-## Internal Notes
+## Technical Handoff
 
-The detailed technical handoff document lives here:
+The detailed living tech spec is here:
 
-- [Tech spec](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
+- [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)

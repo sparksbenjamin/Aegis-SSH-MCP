@@ -3,9 +3,9 @@ package mcp
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -33,10 +33,13 @@ type AegisServer struct {
 	configsDir string
 	rulesDir   string
 
-	mu       sync.RWMutex
-	configs  map[string]*config.HostConfig
-	stopCh   chan struct{}
-	stopOnce sync.Once
+	mu            sync.RWMutex
+	configs       map[string]*config.HostConfig
+	apiKeyAliases map[string]map[string]struct{}
+	sessionAccess map[string]accessContext
+	httpSrv       *http.Server
+	stopCh        chan struct{}
+	stopOnce      sync.Once
 }
 
 // NewAegisServer builds the full server stack and loads the initial config state.
@@ -46,7 +49,8 @@ func NewAegisServer(configsDir, rulesDir string, logger *audit.Logger) (*AegisSe
 		return nil, fmt.Errorf("rule engine init: %w", err)
 	}
 
-	mcpSrv := server.NewMCPServer("Aegis-SSH-MCP", "1.0.0")
+	hooks := &server.Hooks{}
+	mcpSrv := server.NewMCPServer("Aegis-SSH-MCP", "1.0.0", server.WithHooks(hooks))
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
@@ -60,15 +64,49 @@ func NewAegisServer(configsDir, rulesDir string, logger *audit.Logger) (*AegisSe
 	}
 
 	a := &AegisServer{
-		mcpSrv:     mcpSrv,
-		ruleEngine: ruleEngine,
-		logger:     logger,
-		watcher:    watcher,
-		configsDir: configsDir,
-		rulesDir:   rulesDir,
-		configs:    make(map[string]*config.HostConfig),
-		stopCh:     make(chan struct{}),
+		mcpSrv:        mcpSrv,
+		ruleEngine:    ruleEngine,
+		logger:        logger,
+		watcher:       watcher,
+		configsDir:    configsDir,
+		rulesDir:      rulesDir,
+		configs:       make(map[string]*config.HostConfig),
+		apiKeyAliases: make(map[string]map[string]struct{}),
+		sessionAccess: make(map[string]accessContext),
+		stopCh:        make(chan struct{}),
 	}
+
+	hooks.AddAfterListTools(func(ctx context.Context, _ any, _ *mcp.ListToolsRequest, result *mcp.ListToolsResult) {
+		if result == nil {
+			return
+		}
+
+		filtered := make([]mcp.Tool, 0, len(result.Tools))
+		for _, tool := range result.Tools {
+			if toolVisibleForContext(ctx, tool.Name) {
+				filtered = append(filtered, tool)
+			}
+		}
+		result.Tools = filtered
+	})
+
+	hooks.AddOnRegisterSession(func(ctx context.Context, session server.ClientSession) {
+		access, ok := accessFromContext(ctx)
+		if !ok {
+			return
+		}
+
+		a.mu.Lock()
+		a.sessionAccess[session.SessionID()] = access
+		a.mu.Unlock()
+
+		go func() {
+			<-ctx.Done()
+			a.mu.Lock()
+			delete(a.sessionAccess, session.SessionID())
+			a.mu.Unlock()
+		}()
+	})
 
 	a.registerIntrospectionTool()
 
@@ -91,16 +129,18 @@ func NewAegisServer(configsDir, rulesDir string, logger *audit.Logger) (*AegisSe
 	return a, nil
 }
 
-// Start launches the fsnotify watcher goroutine and then blocks serving MCP over stdio.
-func (a *AegisServer) Start() error {
-	go a.runWatcher()
-	return server.ServeStdio(a.mcpSrv)
-}
-
 // Stop signals the watcher goroutine to exit and closes the watcher.
 func (a *AegisServer) Stop() {
 	a.stopOnce.Do(func() {
 		close(a.stopCh)
+		a.mu.RLock()
+		httpSrv := a.httpSrv
+		a.mu.RUnlock()
+		if httpSrv != nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = httpSrv.Shutdown(ctx)
+		}
 		_ = a.watcher.Close()
 	})
 }
@@ -151,6 +191,7 @@ func (a *AegisServer) syncConfigs() error {
 		return err
 	}
 
+	apiKeyAliases := buildAPIKeyIndex(cfgs)
 	desired := make(map[string]*config.HostConfig, len(cfgs))
 	for _, cfg := range cfgs {
 		desired[cfg.Alias] = cfg
@@ -166,6 +207,7 @@ func (a *AegisServer) syncConfigs() error {
 		delete(a.configs, alias)
 		removed = append(removed, alias)
 	}
+	a.apiKeyAliases = apiKeyAliases
 	a.mu.Unlock()
 
 	for _, alias := range removed {
@@ -202,15 +244,19 @@ func (a *AegisServer) registerIntrospectionTool() {
 	)
 
 	start := time.Now()
-	a.mcpSrv.AddTool(tool, func(_ context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	a.mcpSrv.AddTool(tool, func(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		a.mu.RLock()
-		hostCount := len(a.configs)
-		aliases := make([]string, 0, hostCount)
+		aliases := make([]string, 0, len(a.configs))
 		for alias := range a.configs {
 			aliases = append(aliases, alias)
 		}
 		a.mu.RUnlock()
-		sort.Strings(aliases)
+
+		visibleAliases := visibleAliasesForContext(ctx, aliases)
+		visibleLabel := strings.Join(visibleAliases, ", ")
+		if visibleLabel == "" {
+			visibleLabel = "none"
+		}
 
 		msg := fmt.Sprintf(
 			"Aegis-SSH-MCP v1.0.0\n"+
@@ -218,8 +264,8 @@ func (a *AegisServer) registerIntrospectionTool() {
 				"Hosts         : %d (%s)\n"+
 				"Rule profiles : %v\n",
 			time.Since(start).Round(time.Second),
-			hostCount,
-			strings.Join(aliases, ", "),
+			len(visibleAliases),
+			visibleLabel,
 			a.ruleEngine.ProfileNames(),
 		)
 		return mcp.NewToolResultText(msg), nil
@@ -228,13 +274,27 @@ func (a *AegisServer) registerIntrospectionTool() {
 
 // makeToolHandler returns the ToolHandlerFunc for a specific host alias.
 func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
-	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	return func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		start := time.Now()
 
 		rawCommand, _ := req.Params.Arguments["command"].(string)
 		rawCommand = strings.TrimSpace(rawCommand)
 		if rawCommand == "" {
 			return mcp.NewToolResultError("'command' parameter must be a non-empty string"), nil
+		}
+
+		if !aliasAllowedForContext(ctx, alias) {
+			logEntry := audit.Entry{
+				AgentAlias:       alias,
+				CommandRequested: rawCommand,
+				ValidationResult: "FAIL",
+				ValidationReason: "API key is not authorized for this host",
+				DurationMs:       time.Since(start).Milliseconds(),
+			}
+			a.logger.Log(logEntry)
+			return mcp.NewToolResultError(
+				fmt.Sprintf("AEGIS BLOCKED - API key is not authorized for host %q", alias),
+			), nil
 		}
 
 		parsed, err := command.Parse(rawCommand)
@@ -307,6 +367,17 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 	}
 }
 
+func (a *AegisServer) aliasesForAPIKey(key string) (map[string]struct{}, bool) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	aliases, ok := a.apiKeyAliases[key]
+	if !ok {
+		return nil, false
+	}
+	return cloneAliasSet(aliases), true
+}
+
 // runWatcher processes fsnotify events and reacts to config and rule changes.
 func (a *AegisServer) runWatcher() {
 	for {
@@ -358,6 +429,28 @@ func sanitizeAlias(alias string) string {
 		}
 	}
 	return sb.String()
+}
+
+func toolNameForAlias(alias string) string {
+	return "aegis_ssh_" + sanitizeAlias(alias)
+}
+
+func toolVisibleForContext(ctx context.Context, toolName string) bool {
+	if toolName == "aegis_status" {
+		return true
+	}
+
+	access, ok := accessFromContext(ctx)
+	if !ok {
+		return true
+	}
+
+	for alias := range access.AllowedAliases {
+		if toolName == toolNameForAlias(alias) {
+			return true
+		}
+	}
+	return false
 }
 
 // formatOutput assembles a human-readable result string from a command result.

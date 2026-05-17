@@ -1,28 +1,101 @@
 # Aegis-SSH-MCP Technical Notes
 
-This document is the working technical handoff for Aegis-SSH-MCP.
-It should be updated whenever architecture, behavior, deployment steps, or repo layout change.
+This is the living technical handoff document for Aegis-SSH-MCP.
+Update it whenever behavior, architecture, deployment, or repo layout changes.
 
 ## Purpose
 
-Aegis-SSH-MCP is a local MCP server that exposes approved SSH actions on remote infrastructure to an AI client.
-Its main job is to act as a command firewall:
+Aegis-SSH-MCP exposes approved SSH actions to MCP clients while acting as a command firewall.
 
-1. Receive a tool call from an MCP client.
-2. Map that tool call to a configured host.
-3. Parse the requested command into executable plus arguments.
-4. Validate the parsed command against a named rule profile.
-5. Rebuild the argv into a normalized shell-safe command string.
-6. Only if validation passes, open a single SSH session and run the normalized command.
-7. Return output to the caller and write an audit record to `stderr`.
+Core flow:
 
-## Current Repo Layout
+1. Receive an MCP tool call.
+2. Map that tool call to a configured host alias.
+3. Parse the command into executable plus arguments.
+4. Validate the parsed command against a rule profile.
+5. Rebuild the argv into a shell-safe normalized command string.
+6. Execute that normalized command over a single SSH session only if validation passed.
+7. Return output and write an audit record.
+
+## Current Architecture
+
+### MCP surface
+
+The server exposes:
+
+- one host tool per config file: `aegis_ssh_<alias>`
+- one status tool: `aegis_status`
+
+Primary deployment transport:
+
+- `HTTPS`
+- `SSE`
+- one Aegis instance per port
+- API-key-filtered tool visibility per session
+
+Local fallback transport:
+
+- `stdio`
+
+### HTTPS SSE access model
+
+This project now treats HTTPS SSE as the recommended operator-facing deployment model.
+
+Connection pattern:
+
+```text
+https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+```
+
+Meaning:
+
+- the port identifies the Aegis service instance
+- the API key identifies which host tools the client is allowed to see and call
+
+Important behavior:
+
+- a host config can define multiple API keys
+- the same API key can be reused across multiple hosts
+- tool visibility is the union of all hosts that contain that key
+- `aegis_status` stays available to authenticated SSE clients, but only reports visible hosts
+
+### Why query-string auth is documented
+
+The underlying `mcp-go` SSE client only attaches custom headers to the POST message endpoint, not reliably to the initial `GET /sse`.
+Because of that, the safest documented connection method is:
+
+```text
+.../sse?apiKey=YOUR_KEY
+```
+
+Header auth is still accepted:
+
+- `Authorization: Bearer YOUR_KEY`
+- `X-API-Key: YOUR_KEY`
+
+But the query-string form is the official documented path.
+
+### Session auth behavior
+
+Implementation notes:
+
+- the initial SSE request authenticates with an API key
+- the API key is bound to the generated session ID
+- later POSTs to the message endpoint can authorize through that session ID alone
+- if a POST includes both a session ID and a key, the key must match the session's stored key
+- each POST re-derives the current allowed host set from the stored API key
+
+That last point matters: config changes apply to existing SSE sessions without requiring a process restart.
+
+## Repo Layout
 
 ```text
 .
 |-- .github/
 |   `-- workflows/
 |       `-- docker-publish.yml
+|-- certs/
+|   `-- .gitkeep
 |-- configs/
 |   |-- dell-r820.json
 |   `-- proxmox-node.json
@@ -39,7 +112,10 @@ Its main job is to act as a command firewall:
 |   |   |-- loader.go
 |   |   `-- loader_test.go
 |   |-- mcp/
-|   |   `-- server.go
+|   |   |-- access.go
+|   |   |-- access_test.go
+|   |   |-- server.go
+|   |   `-- sse.go
 |   |-- rules/
 |   |   |-- engine.go
 |   |   `-- engine_test.go
@@ -60,61 +136,43 @@ Its main job is to act as a command firewall:
 `-- main.go
 ```
 
-## Core Runtime Flow
+## Runtime Startup
 
-### Startup
+`main.go` now supports transport selection through `AEGIS_TRANSPORT`.
 
-`main.go`:
+Supported values:
 
-1. Creates the audit logger.
-2. Resolves config and rule directories.
-3. Builds the Aegis server.
-4. Starts stdio-based MCP serving.
-5. Listens for `SIGINT` and `SIGTERM` for graceful shutdown.
+- `stdio`
+- `sse`
+
+Default:
+
+- `stdio`
 
 Directory resolution behavior:
 
-- Use `AEGIS_CONFIGS_DIR` or `AEGIS_RULES_DIR` if set.
-- Otherwise prefer local `configs/` and `rules/` when running from the repo root.
-- Otherwise fall back to `/configs` and `/rules` for container usage.
+- `AEGIS_CONFIGS_DIR` overrides config path
+- `AEGIS_RULES_DIR` overrides rule path
+- otherwise local `configs/` and `rules/` are preferred from the repo root
+- final fallback is `/configs` and `/rules` for container runs
 
-### MCP Layer
+### SSE environment variables
 
-`internal/mcp/server.go` owns:
+When `AEGIS_TRANSPORT=sse`, these settings matter:
 
-- MCP server creation
-- dynamic tool registration
-- config registry state
-- file watching for config and rule changes
-- the `aegis_status` tool
+- `AEGIS_SSE_ADDR`
+  - default: `:8443`
+- `AEGIS_SSE_BASE_URL`
+  - required
+  - example: `https://aegis.example.com:8443`
+- `AEGIS_SSE_BASE_PATH`
+  - default: `/mcp`
+- `AEGIS_SSE_TLS_CERT_FILE`
+  - required
+- `AEGIS_SSE_TLS_KEY_FILE`
+  - required
 
-Tool naming:
-
-- Host alias `proxmox-node` becomes `aegis_ssh_proxmox-node`
-- Non-alphanumeric characters other than `_` and `-` are normalized to `_`
-
-### Command Handling
-
-Per host tool call:
-
-1. Read the `command` argument.
-2. Parse it with `github.com/google/shlex`.
-3. Look up the live host config by alias.
-4. Validate the parsed executable, arguments, and normalized command with the configured rule profile.
-5. If blocked:
-   - log a failed audit record
-   - return a block message, or a fake response if stealth mode is enabled
-6. If allowed:
-   - execute the normalized shell-safe command string
-   - apply output redaction if enabled
-   - log the result
-   - return combined stdout/stderr text
-
-Important behavior:
-
-- Aegis no longer executes the raw input string directly.
-- It executes a normalized command rebuilt from parsed argv.
-- This neutralizes operator tricks such as quoted separators, command substitution payloads, and similar shell syntax from being interpreted as extra shell structure.
+If no `api_keys` are configured across the host configs, SSE startup fails intentionally.
 
 ## Package Responsibilities
 
@@ -122,88 +180,98 @@ Important behavior:
 
 Responsibilities:
 
-- Parse shell-style quoting into argv
-- Reject control characters
-- Normalize tokens into a shell-safe command string
-- Preserve separate executable, argument, and normalized full-command views for validation
+- parse shell-style quoting into argv using `github.com/google/shlex`
+- reject control characters
+- preserve executable, arguments, and normalized full-command views
+- rebuild a shell-safe normalized command string
+
+Security intent:
+
+- validation is done against structured argv, not the raw shell string
+- execution uses the normalized command, not the original input
 
 ### `internal/config`
 
 Responsibilities:
 
-- Parse host config JSON files
-- Validate required fields
-- Apply default `ssh_port` of `22`
-- Apply default `timeout_seconds` of `30`
-- Scan the `configs/` directory
-- Reject duplicate host aliases
+- parse host config JSON files
+- validate required fields
+- apply default `ssh_port=22`
+- apply default `timeout_seconds=30`
+- normalize and deduplicate `api_keys`
+- scan the `configs/` directory
+- reject duplicate aliases
 
 Important behavior:
 
-- Bad config files are skipped with a warning during directory scans.
-- Duplicate aliases fail the full scan because tool name collisions are unsafe.
+- invalid configs are skipped with a warning during scans
+- duplicate aliases fail the full scan because tool identity collisions are unsafe
 
 ### `internal/rules`
 
 Responsibilities:
 
-- Parse rule profile JSON files
-- Compile whitelist and blacklist regexes
-- Validate commands
-- Reload the entire rule set from disk
+- parse rule JSON
+- compile regex allowlists and blocklists
+- validate executables, arguments, and legacy full-command shapes
+- reload all rule profiles on disk changes
 
 Validation order:
 
-1. Executable blacklist
-2. Arguments blacklist
-3. Legacy full-command blacklist
-4. Executable whitelist
-5. Arguments whitelist
-6. Legacy full-command whitelist
-
-Important behavior:
-
-- `LoadAll()` rebuilds the in-memory rule set from disk instead of merging into the old state.
-- Removing a rule file and reloading removes that profile from memory.
-- Duplicate profile names fail the load.
+1. executable blacklist
+2. arguments blacklist
+3. legacy full-command blacklist
+4. executable whitelist
+5. arguments whitelist
+6. legacy full-command whitelist
 
 ### `internal/ssh`
 
 Responsibilities:
 
-- Build SSH client config
-- Load key-based or password-based auth
-- Enforce restrictive private key permissions
-- Optionally verify host key fingerprints
-- Run one non-interactive SSH command
-- Capture stdout, stderr, and exit code
-- Apply redaction before returning output
-
-Important behavior:
-
-- No interactive shell is opened.
-- The implementation uses one `ssh.Session.Run()` call per request.
-- If `host_key_fingerprint` is empty, insecure host-key verification is used.
+- create SSH client config
+- load key or password auth
+- enforce key file permission checks
+- optionally verify host key fingerprints
+- execute one non-interactive SSH command
+- collect stdout, stderr, exit code
+- apply redaction before returning output
 
 ### `internal/audit`
 
 Responsibilities:
 
-- Write structured JSON audit logs to `stderr`
-- Serialize concurrent writes safely
-- Emit both command and system events
+- emit structured JSON audit logs to `stderr`
+- serialize concurrent writes safely
+- log command and system events
 
-Audit record fields include:
+### `internal/mcp`
 
-- timestamp
-- agent_alias
-- command_requested
-- validation_result
-- validation_reason
-- output_summary
-- exit_code
-- duration_ms
-- stealth_mode
+Responsibilities:
+
+- create the MCP server
+- register host tools
+- expose `aegis_status`
+- watch config and rule directories
+- enforce API-key-based tool visibility for SSE sessions
+- start stdio or HTTPS SSE serving
+
+Key files:
+
+- `access.go`
+  - request API-key extraction
+  - access context helpers
+  - alias visibility helpers
+- `server.go`
+  - tool registration
+  - config reload handling
+  - status tool
+  - command execution handlers
+  - hook registration for filtered `tools/list`
+- `sse.go`
+  - HTTPS listener setup
+  - CORS handling
+  - session-aware auth wrapper
 
 ## Config Model
 
@@ -224,41 +292,36 @@ Host config schema:
   "fake_response": "",
   "redaction_enabled": false,
   "redaction_patterns": [],
-  "host_key_fingerprint": ""
+  "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-server-key",
+    "change-me-shared-ops-key"
+  ]
 }
 ```
 
-Operational notes:
+Notes:
 
-- `alias` must be unique across all files in `configs/`
+- `alias` must be unique
 - `rule_profile` must match a profile in `rules/`
-- `key_path` should reflect the runtime view of the filesystem
-- Docker examples use `/keys/...`
-- Local runs may also use local filesystem paths if desired
+- `api_keys` are normalized with trimming and de-duplication
+- `api_keys` are optional for stdio mode
+- `api_keys` are effectively required for HTTPS SSE access because SSE startup requires at least one configured key somewhere in the config set
 
-## Rule Model
+## Tool Visibility Rules
 
-Rule profile schema:
+For unauthenticated local stdio:
 
-```json
-{
-  "profile_name": "readonly-safe",
-  "executable_whitelist_regex": ["^ls$"],
-  "arguments_blacklist_regex": ["(^| )--privileged($| )"],
-  "whitelist_regex": ["^ls(\\s|$)"],
-  "blacklist_regex": ["rm\\s"]
-}
-```
+- all tools are visible
 
-Recommended authoring guidance:
+For authenticated SSE:
 
-- Prefer `executable_whitelist_regex` for the primary allowlist boundary.
-- Use `arguments_whitelist_regex` and `arguments_blacklist_regex` for flag-level constraints.
-- Keep legacy `whitelist_regex` and `blacklist_regex` for full-command patterns that still add value.
-- Keep blacklist patterns broad enough to stop obvious escape hatches
-- Keep whitelist patterns intentionally narrow
-- Prefer exact command prefixes over permissive wildcard rules
-- Treat rule edits as security changes, not simple config changes
+- `tools/list` is filtered to the allowed host tools for that key
+- `aegis_status` remains visible
+- `aegis_status` only lists hosts visible to that key
+- direct `tools/call` attempts against unauthorized hosts are blocked even if a client guesses a tool name
+
+This means the auth model is not "security by hidden tool list." Visibility and execution are both enforced.
 
 ## Hot Reload Behavior
 
@@ -269,131 +332,111 @@ Watched directories:
 
 Behavior:
 
-- Config changes trigger a full config rescan
-- Rule changes trigger a full rule reload
-- Updating an existing host config refreshes the live config without re-adding the MCP tool
-- Removing a host config deletes it from the in-memory registry
+- config changes trigger a full config rescan
+- rule changes trigger a full rules reload
+- host config updates refresh live config without duplicating the MCP tool registration
+- removed hosts are deleted from the in-memory registry
+- API-key-to-host mappings are rebuilt on every config sync
+- active SSE sessions pick up those key mapping changes on the next request
 
 Known limitation:
 
-- MCP tool removal is limited by the upstream MCP server library
-- If a host config is removed, the old tool name may still appear until the client refreshes its tool list
-- Calls to that tool fail safely because the config no longer exists in memory
+- upstream MCP tool removal behavior is limited
+- if a host config is removed, some clients may keep showing the old tool name until they refresh
+- calls still fail safely because the backing config is removed
 
-## Container Publishing Pipeline
+## Container and Deployment Model
 
-Image registry:
+Registry:
 
 - `ghcr.io/sparksbenjamin/aegis-ssh-mcp`
+
+Compose behavior:
+
+- pulls from GHCR instead of building locally
+- defaults to `latest`
+- uses HTTPS SSE transport
+- mounts:
+  - `./configs` -> `/configs`
+  - `./rules` -> `/rules`
+  - `./keys` -> `/keys`
+  - `./certs` -> `/certs`
+- publishes the configured SSE port to the host
+
+Current compose env defaults:
+
+- `AEGIS_TRANSPORT=sse`
+- `AEGIS_CONFIGS_DIR=/configs`
+- `AEGIS_RULES_DIR=/rules`
+- `AEGIS_SSE_ADDR=:8443`
+- `AEGIS_SSE_BASE_URL=https://localhost:8443`
+- `AEGIS_SSE_BASE_PATH=/mcp`
+- `AEGIS_SSE_TLS_CERT_FILE=/certs/tls.crt`
+- `AEGIS_SSE_TLS_KEY_FILE=/certs/tls.key`
+
+Operator note:
+
+- if you change the port, hostname, or both, update `AEGIS_SSE_BASE_URL` to match the externally reachable HTTPS address
+
+## GitHub Actions Image Publishing
 
 Workflow:
 
 - `.github/workflows/docker-publish.yml`
 
-Trigger behavior:
+Behavior:
 
-- Push to `main` publishes `latest`
-- Push a tag like `v1.2.3` publishes that tag
-- Every pushed build also gets a `sha-...` tag
-- Pull requests build the image for validation but do not publish it
+- push to `main` publishes `latest`
+- push a tag like `v1.2.3` publishes that version tag
+- each publish also gets a `sha-...` tag
+- pull requests build for validation without publishing
 
-Workflow steps:
+Important implementation detail:
 
-1. Check out the repository
-2. Set up Go
-3. Run `go test ./...`
-4. Set up Docker Buildx
-5. Log in to GHCR for non-PR events
-6. Build a multi-arch image for `linux/amd64` and `linux/arm64`
-7. Push the image to GHCR on `main` and version tags
+- the Dockerfile builder image is aligned to Go 1.23 because `go.mod` requires 1.23
+- the build uses `TARGETOS` and `TARGETARCH` so multi-arch GHCR publishing produces correct binaries for `amd64` and `arm64`
 
-Operational note:
+## Security Notes
 
-- After the first publish, confirm the GHCR package visibility is public if you want anonymous pulls from `docker compose`
-- The Dockerfile builder image must stay aligned with the Go version declared in `go.mod`
-- The Dockerfile builds with `TARGETOS` and `TARGETARCH` so multi-arch GHCR publishing produces the correct binary per image
-
-## Deployment Modes
-
-### Local
-
-Command:
-
-```bash
-go run .
-```
-
-Best for:
-
-- development
-- debugging
-- local MCP integration tests
-
-### Docker via GHCR
-
-Commands:
-
-```bash
-docker compose pull
-docker compose run --rm -i aegis-ssh-mcp
-```
-
-Compose behavior:
-
-- Uses `ghcr.io/sparksbenjamin/aegis-ssh-mcp:${AEGIS_IMAGE_TAG:-latest}`
-- Pulls from GHCR instead of building locally
-- `AEGIS_IMAGE_TAG` can pin a specific published image tag
-
-Volume expectations:
-
-- `./configs` -> `/configs`
-- `./rules` -> `/rules`
-- `./keys` -> `/keys`
-
-Security posture in the container:
-
-- distroless runtime image
-- non-root user
-- read-only root filesystem
-- `cap_drop: ALL`
-- `no-new-privileges`
-- `tmpfs` for `/tmp`
+- commands are parsed before validation
+- raw command strings are not executed directly
+- a normalized shell-safe command is executed instead
+- command validation occurs before any SSH connection attempt
+- API keys gate tool visibility and tool execution for SSE sessions
+- if `host_key_fingerprint` is empty, host-key verification is insecure
+- TLS is required for the recommended SSE deployment model
 
 ## Validation Performed In This Session
 
 Completed:
 
-- Dockerfile updated to use Go 1.23 in the builder stage
-- Dockerfile updated to build per-target architecture instead of hard-coding `amd64`
-- command parsing added via `github.com/google/shlex`
-- normalized shell-safe execution path added
-- executable-level rule validation added to bundled rule profiles
-- GitHub Actions workflow added for Docker image publishing to GHCR
-- `docker-compose.yml` switched from local build to GHCR pulls
-- README updated for the published image flow
-- tech spec updated for the new delivery pipeline
+- added HTTPS SSE transport support
+- added API-key-based host access control for SSE
+- added session-bound access behavior for SSE clients
+- added config support for `api_keys`
+- updated sample configs with `api_keys`
+- updated docker compose for GHCR-based HTTPS SSE deployment
+- updated README for the new operator flow
+- updated this tech spec for the new architecture
 
-Notes:
+Verification:
 
-- `go test ./...` passed after the parser and rule engine changes
-- `go build -buildvcs=false ./...` passed in the local workspace
-- The GitHub Actions workflow was added but not executed inside this workspace
-- GHCR package visibility may need a one-time check after the first publish
+- `gofmt -w internal/config/loader.go internal/config/loader_test.go internal/mcp/access.go internal/mcp/access_test.go internal/mcp/server.go internal/mcp/sse.go main.go`
+- `go test ./...`
+- `go build -buildvcs=false ./...`
 
-## Important Maintenance Rules
+Not performed here:
+
+- a live HTTPS container run
+- an end-to-end external SSE client handshake against a running container
+
+## Maintenance Rules
 
 When changing this project in future sessions:
 
-1. Update this tech spec if behavior, structure, or deployment steps changed.
-2. Keep README focused on deployers and operators.
-3. Keep host samples in `configs/` and rule samples in `rules/`.
-4. Keep private keys out of git.
-5. Re-run `go test ./...` and `go build ./...` before finalizing code changes.
-6. Keep the GHCR image reference in `docker-compose.yml` aligned with the repo owner/name.
-
-## Known Follow-Up Opportunities
-
-- Add signed release tags and documented versioning rules
-- Add a separate non-publishing CI workflow if branch validation should stay independent from image publishing
-- Add tests for MCP tool registration and config reload behavior
-- Add example MCP client configs for specific clients if needed
+1. Update this tech spec when architecture or deployment behavior changes.
+2. Keep the README focused on deployers and operators.
+3. Keep sample host configs in `configs/`.
+4. Keep private keys and certificates out of git.
+5. Re-run `go test ./...` and `go build -buildvcs=false ./...`.
+6. Keep `docker-compose.yml` pointing at the GHCR image unless there is a deliberate release process change.

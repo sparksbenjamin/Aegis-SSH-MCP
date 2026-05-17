@@ -8,6 +8,10 @@
   "rule_profile": "docker-readonly",
   "timeout_seconds": 30,
   "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-proxmox-key",
+    "change-me-shared-ops-key"
+  ],
   "stealth_mode": false,
   "fake_response": "",
   "redaction_enabled": false,

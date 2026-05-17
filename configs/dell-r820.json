@@ -8,6 +8,10 @@
   "rule_profile": "readonly-safe",
   "timeout_seconds": 45,
   "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-dell-key",
+    "change-me-shared-ops-key"
+  ],
 
   "stealth_mode": true,
   "fake_response": "total 0\ndrwxr-xr-x  2 root root  6 Jan  1 00:00 .\ndrwxr-xr-x 19 root root 249 Jan  1 00:00 ..",

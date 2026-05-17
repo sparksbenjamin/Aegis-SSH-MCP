@@ -8,3 +8,5 @@ aegis-ssh-mcp
 
 keys/*
 !keys/.gitkeep
+certs/*
+!certs/.gitkeep
