@@ -80,12 +80,6 @@ func aliasAllowedForContext(ctx context.Context, alias string) bool {
 }
 
 func extractAPIKeyFromRequest(r *http.Request) string {
-	if key := strings.TrimSpace(r.URL.Query().Get("apiKey")); key != "" {
-		return key
-	}
-	if key := strings.TrimSpace(r.Header.Get("X-API-Key")); key != "" {
-		return key
-	}
 	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
 	if authHeader == "" {
 		return ""
@@ -93,5 +87,5 @@ func extractAPIKeyFromRequest(r *http.Request) string {
 	if strings.HasPrefix(strings.ToLower(authHeader), "bearer ") {
 		return strings.TrimSpace(authHeader[7:])
 	}
-	return authHeader
+	return ""
 }

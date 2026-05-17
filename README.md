@@ -10,21 +10,23 @@ The recommended way to run Aegis is:
 - deploy the published GitHub Container Registry image
 - expose it over `HTTPS`
 - connect to it with MCP over `SSE`
+- send a bearer token in the `Authorization` header
 - use an `api_keys` entry in each host config to control which tools a client can see
 
 In practice, the connection is:
 
 ```text
-https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+GET /mcp/sse
+Authorization: Bearer YOUR_TOKEN
 ```
 
 The port selects the Aegis instance.
-The API key selects which host tools that client can use.
+The bearer token selects which host tools that client can use.
 
 ## What You Get
 
 - One MCP tool per host config, such as `aegis_ssh_proxmox-node`
-- Per-key tool filtering for HTTPS SSE clients
+- Per-token tool filtering for HTTPS SSE clients
 - Executable and argument validation before any SSH call is made
 - Shell-safe command normalization before execution
 - Optional stealth responses
@@ -59,7 +61,8 @@ Keep them out of git.
 
 Host configs live in `configs/`.
 Each host can define one or more `api_keys`.
-If the same key appears on multiple hosts, that key will see all of those host tools.
+These values are used as accepted bearer tokens.
+If the same token appears on multiple hosts, that token will see all of those host tools.
 
 Example:
 
@@ -87,6 +90,7 @@ Important notes:
 - `key_path` is required for key auth
 - `password` is required for password auth
 - `api_keys` are optional for local stdio use, but required if you want HTTPS SSE access
+- for HTTPS SSE, clients must send those values as `Authorization: Bearer <token>`
 
 ### 4. Choose a rule profile
 
@@ -166,31 +170,31 @@ If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
 
 ## Connect Your MCP Client
 
-Recommended SSE URL:
+Recommended SSE deployment:
 
 ```text
-https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+URL: https://HOST:PORT/mcp/sse
+Header: Authorization: Bearer YOUR_TOKEN
 ```
 
-Example client config for clients that support SSE URLs directly:
+Example client config for clients that support SSE plus custom headers:
 
 ```json
 {
   "mcpServers": {
     "aegis": {
       "transport": "sse",
-      "url": "https://aegis.example.com:8443/mcp/sse?apiKey=change-me-shared-ops-key"
+      "url": "https://aegis.example.com:8443/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer change-me-shared-ops-key"
+      }
     }
   }
 }
 ```
 
-Header-based auth is also supported:
-
-- `Authorization: Bearer YOUR_KEY`
-- `X-API-Key: YOUR_KEY`
-
-But the query-string form is the safest documented option because some SSE clients do not send auth headers on the initial `GET /sse` request.
+This repo now treats bearer-header auth as the only documented remote auth path.
+Query-string tokens are intentionally not part of the deployment guidance.
 
 ## Tools Exposed
 
@@ -202,7 +206,7 @@ It also exposes:
 
 - `aegis_status`
 
-For HTTPS SSE clients, the visible tool list is filtered by the API key used for that session.
+For HTTPS SSE clients, the visible tool list is filtered by the bearer token used for that session.
 
 ## Local Development
 

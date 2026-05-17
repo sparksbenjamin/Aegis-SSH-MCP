@@ -31,7 +31,7 @@ Primary deployment transport:
 - `HTTPS`
 - `SSE`
 - one Aegis instance per port
-- API-key-filtered tool visibility per session
+- bearer-token-filtered tool visibility per session
 
 Local fallback transport:
 
@@ -44,46 +44,46 @@ This project now treats HTTPS SSE as the recommended operator-facing deployment 
 Connection pattern:
 
 ```text
-https://HOST:PORT/mcp/sse?apiKey=YOUR_KEY
+GET /mcp/sse
+Authorization: Bearer YOUR_TOKEN
 ```
 
 Meaning:
 
 - the port identifies the Aegis service instance
-- the API key identifies which host tools the client is allowed to see and call
+- the bearer token identifies which host tools the client is allowed to see and call
 
 Important behavior:
 
 - a host config can define multiple API keys
-- the same API key can be reused across multiple hosts
-- tool visibility is the union of all hosts that contain that key
+- those API-key values are used as accepted bearer tokens
+- the same token can be reused across multiple hosts
+- tool visibility is the union of all hosts that contain that token
 - `aegis_status` stays available to authenticated SSE clients, but only reports visible hosts
 
-### Why query-string auth is documented
+### Bearer-token requirement
 
-The underlying `mcp-go` SSE client only attaches custom headers to the POST message endpoint, not reliably to the initial `GET /sse`.
-Because of that, the safest documented connection method is:
+The official MCP authorization spec for HTTP transports requires:
 
 ```text
-.../sse?apiKey=YOUR_KEY
+Authorization: Bearer <access-token>
 ```
 
-Header auth is still accepted:
+And it explicitly says authorization must be included on every HTTP request.
 
-- `Authorization: Bearer YOUR_KEY`
-- `X-API-Key: YOUR_KEY`
+This repo now aligns its documented deployment model to that standard.
 
-But the query-string form is the official documented path.
+Query-string tokens are not part of the recommended deployment path.
 
 ### Session auth behavior
 
 Implementation notes:
 
-- the initial SSE request authenticates with an API key
-- the API key is bound to the generated session ID
+- the initial SSE request authenticates with a bearer token
+- that token is bound to the generated session ID
 - later POSTs to the message endpoint can authorize through that session ID alone
-- if a POST includes both a session ID and a key, the key must match the session's stored key
-- each POST re-derives the current allowed host set from the stored API key
+- if a POST includes both a session ID and a token, the token must match the session's stored token
+- each POST re-derives the current allowed host set from the stored token
 
 That last point matters: config changes apply to existing SSE sessions without requiring a process restart.
 
@@ -173,6 +173,7 @@ When `AEGIS_TRANSPORT=sse`, these settings matter:
   - required
 
 If no `api_keys` are configured across the host configs, SSE startup fails intentionally.
+Missing or invalid bearer tokens return `401 Unauthorized` with a `WWW-Authenticate: Bearer ...` challenge.
 
 ## Package Responsibilities
 
@@ -253,13 +254,13 @@ Responsibilities:
 - register host tools
 - expose `aegis_status`
 - watch config and rule directories
-- enforce API-key-based tool visibility for SSE sessions
+- enforce bearer-token-based tool visibility for SSE sessions
 - start stdio or HTTPS SSE serving
 
 Key files:
 
 - `access.go`
-  - request API-key extraction
+  - request bearer-token extraction
   - access context helpers
   - alias visibility helpers
 - `server.go`
@@ -306,7 +307,8 @@ Notes:
 - `rule_profile` must match a profile in `rules/`
 - `api_keys` are normalized with trimming and de-duplication
 - `api_keys` are optional for stdio mode
-- `api_keys` are effectively required for HTTPS SSE access because SSE startup requires at least one configured key somewhere in the config set
+- `api_keys` are effectively required for HTTPS SSE access because SSE startup requires at least one configured token somewhere in the config set
+- for HTTPS SSE, those configured values are expected to be sent as bearer tokens in the `Authorization` header
 
 ## Tool Visibility Rules
 
@@ -316,9 +318,10 @@ For unauthenticated local stdio:
 
 For authenticated SSE:
 
-- `tools/list` is filtered to the allowed host tools for that key
+- `tools/list` is filtered to the allowed host tools for that token
+- authenticated requests are expected to use `Authorization: Bearer <token>`
 - `aegis_status` remains visible
-- `aegis_status` only lists hosts visible to that key
+- `aegis_status` only lists hosts visible to that token
 - direct `tools/call` attempts against unauthorized hosts are blocked even if a client guesses a tool name
 
 This means the auth model is not "security by hidden tool list." Visibility and execution are both enforced.
@@ -336,8 +339,8 @@ Behavior:
 - rule changes trigger a full rules reload
 - host config updates refresh live config without duplicating the MCP tool registration
 - removed hosts are deleted from the in-memory registry
-- API-key-to-host mappings are rebuilt on every config sync
-- active SSE sessions pick up those key mapping changes on the next request
+- token-to-host mappings are rebuilt on every config sync
+- active SSE sessions pick up those token mapping changes on the next request
 
 Known limitation:
 
@@ -403,6 +406,7 @@ Important implementation detail:
 - a normalized shell-safe command is executed instead
 - command validation occurs before any SSH connection attempt
 - API keys gate tool visibility and tool execution for SSE sessions
+- HTTPS SSE requests challenge with `WWW-Authenticate: Bearer ...` when the token is missing or invalid
 - if `host_key_fingerprint` is empty, host-key verification is insecure
 - TLS is required for the recommended SSE deployment model
 
@@ -411,7 +415,7 @@ Important implementation detail:
 Completed:
 
 - added HTTPS SSE transport support
-- added API-key-based host access control for SSE
+- added bearer-token-based host access control for SSE
 - added session-bound access behavior for SSE clients
 - added config support for `api_keys`
 - updated sample configs with `api_keys`

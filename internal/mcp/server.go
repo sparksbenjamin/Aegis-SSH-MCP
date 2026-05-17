@@ -288,12 +288,12 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 				AgentAlias:       alias,
 				CommandRequested: rawCommand,
 				ValidationResult: "FAIL",
-				ValidationReason: "API key is not authorized for this host",
+				ValidationReason: "bearer token is not authorized for this host",
 				DurationMs:       time.Since(start).Milliseconds(),
 			}
 			a.logger.Log(logEntry)
 			return mcp.NewToolResultError(
-				fmt.Sprintf("AEGIS BLOCKED - API key is not authorized for host %q", alias),
+				fmt.Sprintf("AEGIS BLOCKED - bearer token is not authorized for host %q", alias),
 			), nil
 		}
 

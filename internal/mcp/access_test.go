@@ -39,17 +39,23 @@ func TestVisibleAliasesForContextFiltersAccess(t *testing.T) {
 	}
 }
 
-func TestExtractAPIKeyFromRequestSupportsQueryAndHeaders(t *testing.T) {
+func TestExtractAPIKeyFromRequestSupportsBearerOnly(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest("GET", "https://example.com/mcp/sse?apiKey=query-key", nil)
-	if got := extractAPIKeyFromRequest(req); got != "query-key" {
-		t.Fatalf("expected query key, got %q", got)
-	}
-
-	req = httptest.NewRequest("GET", "https://example.com/mcp/sse", nil)
+	req := httptest.NewRequest("GET", "https://example.com/mcp/sse", nil)
 	req.Header.Set("Authorization", "Bearer bearer-key")
 	if got := extractAPIKeyFromRequest(req); got != "bearer-key" {
 		t.Fatalf("expected bearer key, got %q", got)
+	}
+
+	req = httptest.NewRequest("GET", "https://example.com/mcp/sse?apiKey=query-key", nil)
+	if got := extractAPIKeyFromRequest(req); got != "" {
+		t.Fatalf("expected query key to be ignored, got %q", got)
+	}
+
+	req = httptest.NewRequest("GET", "https://example.com/mcp/sse", nil)
+	req.Header.Set("Authorization", "query-key")
+	if got := extractAPIKeyFromRequest(req); got != "" {
+		t.Fatalf("expected non-bearer auth header to be ignored, got %q", got)
 	}
 }

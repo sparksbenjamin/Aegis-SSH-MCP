@@ -56,7 +56,7 @@ func (a *AegisServer) StartStdio() error {
 	return mcpserver.ServeStdio(a.mcpSrv)
 }
 
-// StartSSE serves MCP over HTTPS using SSE with API-key-based tool filtering.
+// StartSSE serves MCP over HTTPS using SSE with bearer-token-based tool filtering.
 func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 	cfg = cfg.normalized()
 	if err := cfg.validate(); err != nil {
@@ -99,8 +99,9 @@ func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 func (a *AegisServer) wrapSSEAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Headers", "Authorization, X-API-Key, Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Vary", "Authorization")
 
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
@@ -109,6 +110,7 @@ func (a *AegisServer) wrapSSEAuth(next http.Handler) http.Handler {
 
 		ctx, err := a.authenticatedContextForRequest(r)
 		if err != nil {
+			setBearerChallenge(w, err)
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
@@ -128,12 +130,12 @@ func (a *AegisServer) authenticatedContextForRequest(r *http.Request) (context.C
 		}
 
 		if key := extractAPIKeyFromRequest(r); key != "" && key != access.APIKey {
-			return nil, fmt.Errorf("invalid API key for session")
+			return nil, fmt.Errorf("invalid bearer token for session")
 		}
 
 		aliases, ok := a.aliasesForAPIKey(access.APIKey)
 		if !ok {
-			return nil, fmt.Errorf("API key is no longer authorized")
+			return nil, fmt.Errorf("bearer token is no longer authorized")
 		}
 
 		return withAccessContext(r.Context(), access.APIKey, aliases), nil
@@ -141,12 +143,24 @@ func (a *AegisServer) authenticatedContextForRequest(r *http.Request) (context.C
 
 	key := extractAPIKeyFromRequest(r)
 	if key == "" {
-		return nil, fmt.Errorf("missing API key")
+		return nil, fmt.Errorf("missing bearer token")
 	}
 
 	aliases, ok := a.aliasesForAPIKey(key)
 	if !ok {
-		return nil, fmt.Errorf("invalid API key")
+		return nil, fmt.Errorf("invalid bearer token")
 	}
 	return withAccessContext(r.Context(), key, aliases), nil
+}
+
+func setBearerChallenge(w http.ResponseWriter, err error) {
+	errorCode := "invalid_token"
+	if strings.Contains(strings.ToLower(err.Error()), "missing") {
+		errorCode = "invalid_request"
+	}
+
+	w.Header().Set(
+		"WWW-Authenticate",
+		fmt.Sprintf(`Bearer realm="aegis-ssh-mcp", error="%s"`, errorCode),
+	)
 }
