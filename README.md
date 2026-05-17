@@ -1,55 +1,22 @@
 # Aegis-SSH-MCP
 
-Aegis-SSH-MCP is a Go-based MCP gateway that gives AI agents controlled SSH access to remote systems.
-Each host is exposed as its own MCP tool, and every command is parsed, validated, normalized into a shell-safe form, and only then executed over SSH.
+Aegis-SSH-MCP lets you give an AI agent controlled SSH access to a specific machine through MCP.
 
-## Recommended Connection Model
+The important model is simple:
 
-The recommended way to run Aegis is:
+- one Aegis container
+- one exposed port
+- one MCP endpoint per host config
+- one bearer token per host config
 
-- deploy the published GitHub Container Registry image
-- expose it over `HTTPS` by default
-- connect to it with MCP over `SSE`
-- send a bearer token in the `Authorization` header
-- give each host config its own endpoint path and its own bearer token
-
-In practice, the connection is:
-
-```text
-GET /mcp/HOST_ALIAS/sse
-Authorization: Bearer YOUR_TOKEN
-```
-
-The port selects the Aegis instance.
-The endpoint path and bearer token together select exactly one host surface.
-`HOST_ALIAS` is the sanitized config alias, so `my-server` becomes `/mcp/my-server/sse`.
-
-## What You Get
-
-- One MCP endpoint per host config, such as `/mcp/proxmox-node/sse`
-- One SSH tool inside that endpoint, such as `aegis_ssh_proxmox-node`
-- Per-host bearer-token isolation for HTTPS SSE clients
-- Executable and argument validation before any SSH call is made
-- Shell-safe command normalization before execution
-- Optional stealth responses
-- Optional output redaction
-- Structured audit logs on `stderr`
-- Hot reload for `configs/*.json` and `rules/*.json`
-- Automatic GHCR image publishing from GitHub Actions
+Each endpoint exposes that host's SSH tool and `aegis_status`. Commands are parsed, validated, normalized into a shell-safe form, and only then executed over SSH.
 
 ## Quick Start
 
-You do not need to build this project from source to deploy it.
-The quick-start path is: pull the published image, mount your config paths, and start Docker Compose.
+You do not need to build from source to use Aegis.
+The normal deployment path is: pull the published image, mount your files, start Docker Compose, and connect your MCP client.
 
-### 1. Create host folders
-
-Create folders anywhere on your host for:
-
-- host configs
-- rule files
-- SSH keys
-- TLS certs
+### 1. Create folders on the host
 
 Example:
 
@@ -60,7 +27,7 @@ Example:
 /opt/aegis/certs
 ```
 
-### 2. Add a host config
+### 2. Create a host config
 
 Save a file such as `/opt/aegis/configs/my-server.json`:
 
@@ -74,19 +41,20 @@ Save a file such as `/opt/aegis/configs/my-server.json`:
   "key_path": "/keys/my-server.pem",
   "rule_profile": "readonly-safe",
   "timeout_seconds": 30,
+  "host_key_fingerprint": "",
   "api_keys": [
     "change-me-my-server-token"
   ]
 }
 ```
 
-Important:
+What matters here:
 
-- `alias` must be unique
-- `key_path` must match the container path, not the host path
+- `alias` becomes the MCP endpoint path
+- `key_path` must use the container path, not the host path
 - each bearer token must belong to only one host config
-- `api_keys` are the bearer tokens your MCP clients will use for this host endpoint
-- clients must send them as `Authorization: Bearer <token>`
+- clients must send the token as `Authorization: Bearer <token>`
+- if `host_key_fingerprint` is empty, Aegis will warn and use insecure host-key verification
 
 ### 3. Add your SSH key and TLS certs
 
@@ -104,18 +72,9 @@ Quick self-signed cert example:
 openssl req -x509 -nodes -newkey rsa:2048 -keyout /opt/aegis/certs/tls.key -out /opt/aegis/certs/tls.crt -days 365 -subj "/CN=localhost"
 ```
 
-If you want to run without TLS for local testing, set:
+### 4. Save this Docker Compose file
 
-```text
-AEGIS_SSE_DISABLE_TLS=true
-AEGIS_SSE_BASE_URL=http://localhost:8443
-```
-
-When TLS is disabled, cert files are not required.
-
-### 4. Copy this Docker Compose file
-
-Save this as `docker-compose.yml` and replace the host paths with yours:
+Replace the host paths and hostname with yours:
 
 ```yaml
 services:
@@ -145,7 +104,7 @@ services:
       - /opt/aegis/certs:/certs:ro
 ```
 
-### 5. Pull and start it
+### 5. Start it
 
 ```bash
 docker compose pull
@@ -155,62 +114,36 @@ docker compose logs -f aegis-ssh-mcp
 
 ### 6. Connect your MCP client
 
-Use:
+If your config alias is `my-server`, the endpoint is:
 
 ```text
 URL: https://aegis.example.com:8443/mcp/my-server/sse
 Header: Authorization: Bearer change-me-my-server-token
 ```
 
-That is the deploy path: pull the image, mount your files, and start the container.
+That is the main deployment flow.
 
-## Docker Compose Settings
+## Client Examples
 
-The compose file is already set up to pull from GHCR and run the HTTPS SSE transport.
+### One host
 
-Most important settings:
-
-- `AEGIS_SSE_PORT`
-- `AEGIS_SSE_BASE_URL`
-- `AEGIS_IMAGE_TAG`
-
-Example `.env`:
-
-```dotenv
-AEGIS_SSE_PORT=8443
-AEGIS_SSE_BASE_URL=https://aegis.example.com:8443
-AEGIS_IMAGE_TAG=latest
+```json
+{
+  "mcpServers": {
+    "aegis-my-server": {
+      "transport": "sse",
+      "url": "https://aegis.example.com:8443/mcp/my-server/sse",
+      "headers": {
+        "Authorization": "Bearer change-me-my-server-token"
+      }
+    }
+  }
+}
 ```
 
-If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
+### Two hosts
 
-Optional local-only insecure mode:
-
-- `AEGIS_SSE_DISABLE_TLS=true`
-- set `AEGIS_SSE_BASE_URL` to `http://...`
-- `AEGIS_SSE_TLS_CERT_FILE` and `AEGIS_SSE_TLS_KEY_FILE` are not required in that mode
-- do not use this mode on untrusted networks
-
-The repo copy of [docker-compose.yml](docker-compose.yml) uses relative mounts for running from this checkout.
-For real deployments, update the volume `source` paths to your host directories.
-
-## Connect Your MCP Client
-
-Recommended SSE deployment:
-
-```text
-URL: https://HOST:PORT/mcp/HOST_ALIAS/sse
-Header: Authorization: Bearer YOUR_TOKEN
-```
-
-For local insecure HTTP testing:
-
-```text
-URL: http://HOST:PORT/mcp/HOST_ALIAS/sse
-Header: Authorization: Bearer YOUR_TOKEN
-```
-
-Example client config for clients that support SSE plus custom headers:
+If you want one agent to reach two boxes, add Aegis twice with two different URLs and two different bearer tokens:
 
 ```json
 {
@@ -233,44 +166,85 @@ Example client config for clients that support SSE plus custom headers:
 }
 ```
 
-This repo now treats bearer-header auth as the only documented remote auth path.
-Query-string tokens are intentionally not part of the deployment guidance.
-If you want one agent to reach two boxes, add the MCP twice with two different URLs and two different bearer tokens.
+## How Aegis Maps Hosts
 
-## Tools Exposed
+- Config alias `my-server` becomes endpoint `/mcp/my-server/sse`
+- Each endpoint exposes one host-scoped SSH tool like `aegis_ssh_my-server`
+- Each endpoint also exposes `aegis_status`
+- One bearer token cannot be reused across different host configs
 
-For each file in `configs/`, Aegis exposes:
+## Rules and Safety
 
-- `aegis_ssh_<alias>`
+Rule profiles live in `rules/`.
+Included examples:
 
-It also exposes:
+- `readonly-safe`
+- `docker-readonly`
+- `docker-ops`
 
-- `aegis_status`
+Important behavior:
 
-For HTTPS SSE clients, each endpoint is host-scoped and each bearer token is host-scoped.
-Plain HTTP SSE is supported only when `AEGIS_SSE_DISABLE_TLS=true`.
+- commands are validated before SSH is attempted
+- raw shell strings are not executed directly
+- Aegis rebuilds a normalized shell-safe command before execution
+- if validation fails, SSH is never attempted
+
+## Optional Local HTTP Mode
+
+HTTPS is the normal deployment mode.
+
+For local or lab testing only, you can disable TLS:
+
+```text
+AEGIS_SSE_DISABLE_TLS=true
+AEGIS_SSE_BASE_URL=http://localhost:8443
+```
+
+In that mode:
+
+- cert files are not required
+- client URLs use `http://...`
+- you should not use it on untrusted networks
+
+Example:
+
+```text
+URL: http://localhost:8443/mcp/my-server/sse
+Header: Authorization: Bearer change-me-my-server-token
+```
+
+## Docker Compose Notes
+
+The repo copy of [docker-compose.yml](docker-compose.yml) uses relative mounts for running from this checkout.
+For real deployments, update the volume source paths to your host directories.
+
+Common settings:
+
+- `AEGIS_SSE_BASE_URL`
+- `AEGIS_SSE_PORT`
+- `AEGIS_IMAGE_TAG`
+
+Example `.env`:
+
+```dotenv
+AEGIS_SSE_PORT=8443
+AEGIS_SSE_BASE_URL=https://aegis.example.com:8443
+AEGIS_IMAGE_TAG=latest
+```
+
+If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
 
 ## Local Development
 
-Local stdio mode still works for development:
+If you want to run from source instead:
 
 ```bash
 go run .
 ```
 
-When run from the repo root, Aegis automatically uses the local `configs/` and `rules/` folders.
+When run from the repo root, Aegis uses the local `configs/` and `rules/` folders automatically.
 
-## Security Notes
-
-- Aegis runs one non-interactive SSH command per request
-- If validation fails, SSH is never attempted
-- Raw shell strings are not executed directly
-- Commands are rebuilt into a normalized shell-safe form before execution
-- If `host_key_fingerprint` is empty, host verification falls back to insecure mode
-- If `redaction_enabled` is true, matching output is replaced with `[REDACTED]`
-- If `stealth_mode` is true, blocked commands can return a fake response
-
-## Development Checks
+## Validation
 
 ```bash
 go test ./...
@@ -279,6 +253,6 @@ go build -buildvcs=false ./...
 
 ## Technical Handoff
 
-The detailed living tech spec is here:
+The living technical notes are here:
 
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
