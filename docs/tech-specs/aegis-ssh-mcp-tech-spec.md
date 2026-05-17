@@ -18,6 +18,9 @@ Its main job is to act as a command firewall:
 
 ```text
 .
+|-- .github/
+|   `-- workflows/
+|       `-- docker-publish.yml
 |-- configs/
 |   |-- dell-r820.json
 |   `-- proxmox-node.json
@@ -247,6 +250,37 @@ Known limitation:
 - If a host config is removed, the old tool name may still appear until the client refreshes its tool list
 - Calls to that tool fail safely because the config no longer exists in memory
 
+## Container Publishing Pipeline
+
+Image registry:
+
+- `ghcr.io/sparksbenjamin/aegis-ssh-mcp`
+
+Workflow:
+
+- `.github/workflows/docker-publish.yml`
+
+Trigger behavior:
+
+- Push to `main` publishes `latest`
+- Push a tag like `v1.2.3` publishes that tag
+- Every pushed build also gets a `sha-...` tag
+- Pull requests build the image for validation but do not publish it
+
+Workflow steps:
+
+1. Check out the repository
+2. Set up Go
+3. Run `go test ./...`
+4. Set up Docker Buildx
+5. Log in to GHCR for non-PR events
+6. Build a multi-arch image for `linux/amd64` and `linux/arm64`
+7. Push the image to GHCR on `main` and version tags
+
+Operational note:
+
+- After the first publish, confirm the GHCR package visibility is public if you want anonymous pulls from `docker compose`
+
 ## Deployment Modes
 
 ### Local
@@ -263,13 +297,20 @@ Best for:
 - debugging
 - local MCP integration tests
 
-### Docker
+### Docker via GHCR
 
-Command:
+Commands:
 
 ```bash
-docker compose up --build
+docker compose pull
+docker compose run --rm -i aegis-ssh-mcp
 ```
+
+Compose behavior:
+
+- Uses `ghcr.io/sparksbenjamin/aegis-ssh-mcp:${AEGIS_IMAGE_TAG:-latest}`
+- Pulls from GHCR instead of building locally
+- `AEGIS_IMAGE_TAG` can pin a specific published image tag
 
 Volume expectations:
 
@@ -290,18 +331,16 @@ Security posture in the container:
 
 Completed:
 
-- repo restructured into a valid Go module layout
-- sample configs moved into `configs/`
-- sample rule profiles moved into `rules/`
-- `go mod tidy`
-- `go test ./...`
-- `go build ./...`
+- GitHub Actions workflow added for Docker image publishing to GHCR
+- `docker-compose.yml` switched from local build to GHCR pulls
+- README updated for the published image flow
+- tech spec updated for the new delivery pipeline
 
 Notes:
 
-- `go test ./...` now includes real unit tests in `internal/config` and `internal/rules`
-- Docker image build was not executed in this session
-- Live SSH connectivity was not tested in this session
+- The local Go code was not changed in this session
+- The GitHub Actions workflow was added but not executed inside this workspace
+- GHCR package visibility may need a one-time check after the first publish
 
 ## Important Maintenance Rules
 
@@ -311,11 +350,12 @@ When changing this project in future sessions:
 2. Keep README focused on deployers and operators.
 3. Keep host samples in `configs/` and rule samples in `rules/`.
 4. Keep private keys out of git.
-5. Re-run `go test ./...` and `go build ./...` before finalizing changes.
+5. Re-run `go test ./...` and `go build ./...` before finalizing code changes.
+6. Keep the GHCR image reference in `docker-compose.yml` aligned with the repo owner/name.
 
 ## Known Follow-Up Opportunities
 
-- Add tests around the SSH layer with mocked sessions or test doubles
+- Add signed release tags and documented versioning rules
+- Add a separate non-publishing CI workflow if branch validation should stay independent from image publishing
 - Add tests for MCP tool registration and config reload behavior
 - Add example MCP client configs for specific clients if needed
-- Add release automation or container publishing if this becomes a shared deployment target

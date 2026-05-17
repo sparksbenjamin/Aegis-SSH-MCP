@@ -11,27 +11,45 @@ Each host is exposed as its own MCP tool, and every command is checked against r
 - Optional output redaction before command results go back to the model
 - Structured JSON audit logs written to `stderr`
 - Hot reload for both `configs/*.json` and `rules/*.json`
+- Automatic Docker image publishing to `ghcr.io/sparksbenjamin/aegis-ssh-mcp`
 
 ## Repo Layout
 
 ```text
 .
-|-- configs/              Host definitions
-|-- docs/tech-specs/      Internal technical notes and handoff docs
+|-- .github/workflows/     CI and container publishing
+|-- configs/               Host definitions
+|-- docs/tech-specs/       Internal technical notes and handoff docs
 |-- internal/
-|   |-- audit/            Audit logging
-|   |-- config/           Host config loading and validation
-|   |-- mcp/              MCP server wiring and file watchers
-|   |-- rules/            Command rule engine
-|   `-- ssh/              SSH execution layer
-|-- keys/                 SSH private keys (not committed)
-|-- rules/                Rule profiles
+|   |-- audit/             Audit logging
+|   |-- config/            Host config loading and validation
+|   |-- mcp/               MCP server wiring and file watchers
+|   |-- rules/             Command rule engine
+|   `-- ssh/               SSH execution layer
+|-- keys/                  SSH private keys (not committed)
+|-- rules/                 Rule profiles
 |-- Dockerfile
 |-- docker-compose.yml
 |-- go.mod
 |-- go.sum
 `-- main.go
 ```
+
+## Image Publishing
+
+This repo is set up to build and publish a new Docker image automatically through GitHub Actions.
+
+- Push to `main` -> publishes a fresh `latest` image
+- Push a tag like `v1.2.3` -> publishes a versioned image tag
+- Every publish also gets a `sha-...` image tag
+
+Published image:
+
+```text
+ghcr.io/sparksbenjamin/aegis-ssh-mcp:latest
+```
+
+If GHCR package visibility is private after the first publish, switch it to public in GitHub so `docker compose` can pull it without extra auth.
 
 ## Quick Start
 
@@ -113,15 +131,25 @@ Rules work like this:
 1. A blacklist runs first and blocks obvious dangerous patterns.
 2. A whitelist runs second and only allows commands that match approved patterns.
 
-### 5. Run Aegis
+### 5. Run Aegis from the published GitHub image
 
-#### Docker
+Pull the latest image:
 
 ```bash
-docker compose up --build
+docker compose pull
 ```
 
-#### Local development
+Run the service:
+
+```bash
+docker compose run --rm -i aegis-ssh-mcp
+```
+
+To pin a specific published image version, set `AEGIS_IMAGE_TAG` before running compose.
+
+### 6. Local development
+
+If you want to run from source instead of GHCR:
 
 ```bash
 go run .
@@ -131,7 +159,7 @@ When run from the repo root, Aegis automatically uses the local `configs/` and `
 
 ## Connect It To Your MCP Client
 
-Example MCP client configuration using Docker:
+Example MCP client configuration using Docker Compose:
 
 ```json
 {

@@ -1,31 +1,22 @@
 ---
-# Aegis-SSH-MCP — Docker Compose
+# Aegis-SSH-MCP - Docker Compose
 #
 # Usage:
-#   docker compose up --build
+#   docker compose pull
+#   docker compose run --rm -i aegis-ssh-mcp
 #
-# The container communicates over stdio (MCP transport).  Wire it into your
-# LLM client (e.g. LibreChat, Claude Desktop) using its MCP stdio adapter.
-#
-# Volumes:
-#   ./configs   ─►  /configs   (host definitions — hot-reloaded by fsnotify)
-#   ./rules     ─►  /rules     (regex security profiles)
-#   ./keys      ─►  /keys      (SSH private keys — read-only, 0600 on host)
-#
-# Secrets (Docker Secrets are preferred over bind-mount plaintext keys in prod):
-#   Uncomment the `secrets:` sections when using Docker Swarm or EE.
+# By default this service pulls the published image from GitHub Container
+# Registry (GHCR). Set AEGIS_IMAGE_TAG to pin a specific published version.
 
 version: "3.9"
 
 services:
   aegis-ssh-mcp:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: aegis-ssh-mcp:latest
+    image: ghcr.io/sparksbenjamin/aegis-ssh-mcp:${AEGIS_IMAGE_TAG:-latest}
+    pull_policy: always
     container_name: aegis-ssh-mcp
 
-    # MCP over stdio — stdin/stdout must be kept open.
+    # MCP over stdio - stdin/stdout must be kept open.
     stdin_open: true
     tty: false
 
@@ -34,36 +25,32 @@ services:
       AEGIS_RULES_DIR: /rules
 
     volumes:
-      # Host definitions — writable so fsnotify picks up live changes.
+      # Host definitions - writable so fsnotify picks up live changes.
       - type: bind
         source: ./configs
         target: /configs
 
-      # Security profiles — writable so rule updates don't require restart.
+      # Security profiles - writable so rule updates don't require restart.
       - type: bind
         source: ./rules
         target: /rules
 
-      # SSH private keys — read-only; ensure 0600 permissions on the host.
+      # SSH private keys - read-only; ensure strict permissions on the host.
       - type: bind
         source: ./keys
         target: /keys
         read_only: true
 
-    # Minimal Linux capabilities — drop everything we don't need.
     cap_drop:
       - ALL
 
-    # No new privileges inside the container.
     security_opt:
       - no-new-privileges:true
 
-    # Read-only root filesystem; /tmp is tmpfs for any runtime scratch.
     read_only: true
     tmpfs:
       - /tmp:size=10m,mode=1777
 
-    # Restart on unexpected crash, but not on clean stop.
     restart: on-failure:5
 
     logging:
@@ -72,7 +59,6 @@ services:
         max-size: "50m"
         max-file: "5"
 
-    # Resource limits — adjust for your hardware.
     deploy:
       resources:
         limits:
