@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -66,12 +67,17 @@ func startServer(srv *aegismcp.AegisServer, transport string) error {
 	case "stdio":
 		return srv.StartStdio()
 	case "sse":
+		disableTLS, err := envBool("AEGIS_SSE_DISABLE_TLS")
+		if err != nil {
+			return err
+		}
 		return srv.StartSSE(aegismcp.SSEConfig{
 			Addr:        envOrDefault("AEGIS_SSE_ADDR", ":8443"),
 			BaseURL:     strings.TrimSpace(os.Getenv("AEGIS_SSE_BASE_URL")),
 			BasePath:    envOrDefault("AEGIS_SSE_BASE_PATH", "/mcp"),
 			TLSCertFile: strings.TrimSpace(os.Getenv("AEGIS_SSE_TLS_CERT_FILE")),
 			TLSKeyFile:  strings.TrimSpace(os.Getenv("AEGIS_SSE_TLS_KEY_FILE")),
+			DisableTLS:  disableTLS,
 		})
 	default:
 		return fmt.Errorf("unsupported AEGIS_TRANSPORT %q", transport)
@@ -93,4 +99,17 @@ func envOrDefault(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func envBool(key string) (bool, error) {
+	raw := strings.TrimSpace(os.Getenv(key))
+	if raw == "" {
+		return false, nil
+	}
+
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("invalid boolean value for %s: %q", key, raw)
+	}
+	return value, nil
 }

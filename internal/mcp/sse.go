@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +20,7 @@ type SSEConfig struct {
 	BasePath    string
 	TLSCertFile string
 	TLSKeyFile  string
+	DisableTLS  bool
 }
 
 func (c SSEConfig) normalized() SSEConfig {
@@ -36,11 +38,24 @@ func (c SSEConfig) validate() error {
 	if strings.TrimSpace(c.BaseURL) == "" {
 		return fmt.Errorf("AEGIS_SSE_BASE_URL is required for SSE transport")
 	}
+	parsedBaseURL, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return fmt.Errorf("parse AEGIS_SSE_BASE_URL: %w", err)
+	}
+	if c.DisableTLS {
+		if parsedBaseURL.Scheme != "http" {
+			return fmt.Errorf("AEGIS_SSE_BASE_URL must use http:// when AEGIS_SSE_DISABLE_TLS=true")
+		}
+		return nil
+	}
+	if parsedBaseURL.Scheme != "https" {
+		return fmt.Errorf("AEGIS_SSE_BASE_URL must use https:// when TLS is enabled")
+	}
 	if strings.TrimSpace(c.TLSCertFile) == "" {
-		return fmt.Errorf("AEGIS_SSE_TLS_CERT_FILE is required for SSE transport")
+		return fmt.Errorf("AEGIS_SSE_TLS_CERT_FILE is required for SSE transport unless AEGIS_SSE_DISABLE_TLS=true")
 	}
 	if strings.TrimSpace(c.TLSKeyFile) == "" {
-		return fmt.Errorf("AEGIS_SSE_TLS_KEY_FILE is required for SSE transport")
+		return fmt.Errorf("AEGIS_SSE_TLS_KEY_FILE is required for SSE transport unless AEGIS_SSE_DISABLE_TLS=true")
 	}
 	return nil
 }
@@ -56,7 +71,7 @@ func (a *AegisServer) StartStdio() error {
 	return mcpserver.ServeStdio(a.mcpSrv)
 }
 
-// StartSSE serves MCP over HTTPS using one host-scoped endpoint per config file.
+// StartSSE serves MCP over HTTPS, or HTTP when explicitly configured, using one host-scoped endpoint per config file.
 func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 	cfg = cfg.normalized()
 	if err := cfg.validate(); err != nil {
@@ -81,10 +96,20 @@ func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 	a.sseCfg = &cfg
 	a.mu.Unlock()
 
-	fmt.Fprintf(os.Stderr, "[AEGIS] HTTPS SSE listening at %s%s/<host-alias>/sse\n", strings.TrimRight(cfg.BaseURL, "/"), cfg.BasePath)
+	schemeLabel := "HTTPS"
+	listen := func() error {
+		return httpSrv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+	}
+	if cfg.DisableTLS {
+		schemeLabel = "HTTP"
+		listen = httpSrv.ListenAndServe
+		fmt.Fprintln(os.Stderr, "[AEGIS] WARNING: TLS is disabled for SSE transport. Use only in trusted local or lab environments.")
+	}
+
+	fmt.Fprintf(os.Stderr, "[AEGIS] %s SSE listening at %s%s/<host-alias>/sse\n", schemeLabel, strings.TrimRight(cfg.BaseURL, "/"), cfg.BasePath)
 	go a.runWatcher()
 
-	err := httpSrv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
+	err := listen()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}

@@ -8,7 +8,7 @@ Each host is exposed as its own MCP tool, and every command is parsed, validated
 The recommended way to run Aegis is:
 
 - deploy the published GitHub Container Registry image
-- expose it over `HTTPS`
+- expose it over `HTTPS` by default
 - connect to it with MCP over `SSE`
 - send a bearer token in the `Authorization` header
 - give each host config its own endpoint path and its own bearer token
@@ -104,6 +104,15 @@ Quick self-signed cert example:
 openssl req -x509 -nodes -newkey rsa:2048 -keyout /opt/aegis/certs/tls.key -out /opt/aegis/certs/tls.crt -days 365 -subj "/CN=localhost"
 ```
 
+If you want to run without TLS for local testing, set:
+
+```text
+AEGIS_SSE_DISABLE_TLS=true
+AEGIS_SSE_BASE_URL=http://localhost:8443
+```
+
+When TLS is disabled, cert files are not required.
+
 ### 4. Copy this Docker Compose file
 
 Save this as `docker-compose.yml` and replace the host paths with yours:
@@ -175,6 +184,13 @@ AEGIS_IMAGE_TAG=latest
 
 If you change the port, update `AEGIS_SSE_BASE_URL` to match it.
 
+Optional local-only insecure mode:
+
+- `AEGIS_SSE_DISABLE_TLS=true`
+- set `AEGIS_SSE_BASE_URL` to `http://...`
+- `AEGIS_SSE_TLS_CERT_FILE` and `AEGIS_SSE_TLS_KEY_FILE` are not required in that mode
+- do not use this mode on untrusted networks
+
 The repo copy of [docker-compose.yml](docker-compose.yml) uses relative mounts for running from this checkout.
 For real deployments, update the volume `source` paths to your host directories.
 
@@ -184,6 +200,13 @@ Recommended SSE deployment:
 
 ```text
 URL: https://HOST:PORT/mcp/HOST_ALIAS/sse
+Header: Authorization: Bearer YOUR_TOKEN
+```
+
+For local insecure HTTP testing:
+
+```text
+URL: http://HOST:PORT/mcp/HOST_ALIAS/sse
 Header: Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -225,6 +248,7 @@ It also exposes:
 - `aegis_status`
 
 For HTTPS SSE clients, each endpoint is host-scoped and each bearer token is host-scoped.
+Plain HTTP SSE is supported only when `AEGIS_SSE_DISABLE_TLS=true`.
 
 ## Local Development
 

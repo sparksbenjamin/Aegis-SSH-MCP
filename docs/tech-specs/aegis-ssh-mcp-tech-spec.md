@@ -37,10 +37,12 @@ Primary deployment transport:
 Local fallback transport:
 
 - `stdio`
+- optional insecure `HTTP + SSE` when `AEGIS_SSE_DISABLE_TLS=true`
 
 ### HTTPS SSE access model
 
 This project now treats HTTPS SSE as the recommended operator-facing deployment model.
+An explicit insecure no-TLS mode also exists for local or lab use.
 
 Connection pattern:
 
@@ -174,9 +176,16 @@ When `AEGIS_TRANSPORT=sse`, these settings matter:
   - required
 - `AEGIS_SSE_TLS_KEY_FILE`
   - required
+- `AEGIS_SSE_DISABLE_TLS`
+  - optional
+  - default: `false`
+  - when `true`, Aegis serves plain HTTP instead of HTTPS
+  - when `true`, `AEGIS_SSE_BASE_URL` must use `http://`
+  - when `true`, cert and key files are not required
 
 If no `api_keys` are configured across the host configs, SSE startup fails intentionally.
 Missing or invalid bearer tokens return `401 Unauthorized` with a `WWW-Authenticate: Bearer ...` challenge.
+When TLS is disabled, the server logs a warning at startup.
 
 ## Package Responsibilities
 
@@ -391,11 +400,13 @@ Current compose env defaults:
 - `AEGIS_SSE_BASE_PATH=/mcp`
 - `AEGIS_SSE_TLS_CERT_FILE=/certs/tls.crt`
 - `AEGIS_SSE_TLS_KEY_FILE=/certs/tls.key`
+- `AEGIS_SSE_DISABLE_TLS=false`
 
 Operator note:
 
 - if you change the port, hostname, or both, update `AEGIS_SSE_BASE_URL` to match the externally reachable HTTPS address
 - client URLs should use `/mcp/<host-alias>/sse`, not a shared `/mcp/sse` path
+- if you intentionally disable TLS, switch `AEGIS_SSE_BASE_URL` to `http://...` and treat that deployment as local-only or lab-only
 
 ## GitHub Actions Image Publishing
 
@@ -423,6 +434,7 @@ Important implementation detail:
 - command validation occurs before any SSH connection attempt
 - host-scoped bearer tokens and host-scoped endpoints gate tool visibility and tool execution for SSE sessions
 - HTTPS SSE requests challenge with `WWW-Authenticate: Bearer ...` when the token is missing or invalid
+- TLS can be disabled explicitly, but that mode is intended only for trusted local or lab environments
 - if `host_key_fingerprint` is empty, host-key verification is insecure
 - TLS is required for the recommended SSE deployment model
 
@@ -438,6 +450,7 @@ Completed:
 - added config support for `api_keys`
 - updated sample configs with `api_keys`
 - updated docker compose for GHCR-based HTTPS SSE deployment
+- added an opt-in no-TLS HTTP SSE mode
 - updated README for the new operator flow
 - updated this tech spec for the new architecture
 
