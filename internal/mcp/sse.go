@@ -56,7 +56,7 @@ func (a *AegisServer) StartStdio() error {
 	return mcpserver.ServeStdio(a.mcpSrv)
 }
 
-// StartSSE serves MCP over HTTPS using SSE with bearer-token-based tool filtering.
+// StartSSE serves MCP over HTTPS using one host-scoped endpoint per config file.
 func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 	cfg = cfg.normalized()
 	if err := cfg.validate(); err != nil {
@@ -70,23 +70,18 @@ func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 		return fmt.Errorf("SSE transport requires at least one api_keys entry in the host configs")
 	}
 
-	sseServer := mcpserver.NewSSEServer(
-		a.mcpSrv,
-		mcpserver.WithBaseURL(cfg.BaseURL),
-		mcpserver.WithBasePath(cfg.BasePath),
-	)
-
 	httpSrv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           a.wrapSSEAuth(sseServer),
+		Handler:           a.wrapSSEAuth(),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
 	a.mu.Lock()
 	a.httpSrv = httpSrv
+	a.sseCfg = &cfg
 	a.mu.Unlock()
 
-	fmt.Fprintf(os.Stderr, "[AEGIS] HTTPS SSE listening at %s%s/sse\n", strings.TrimRight(cfg.BaseURL, "/"), cfg.BasePath)
+	fmt.Fprintf(os.Stderr, "[AEGIS] HTTPS SSE listening at %s%s/<host-alias>/sse\n", strings.TrimRight(cfg.BaseURL, "/"), cfg.BasePath)
 	go a.runWatcher()
 
 	err := httpSrv.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
@@ -96,7 +91,7 @@ func (a *AegisServer) StartSSE(cfg SSEConfig) error {
 	return err
 }
 
-func (a *AegisServer) wrapSSEAuth(next http.Handler) http.Handler {
+func (a *AegisServer) wrapSSEAuth() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
@@ -108,7 +103,13 @@ func (a *AegisServer) wrapSSEAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		ctx, err := a.authenticatedContextForRequest(r)
+		alias, next, ok := a.handlerForRequestPath(r.URL.Path)
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+
+		ctx, err := a.authenticatedContextForRequest(r, alias)
 		if err != nil {
 			setBearerChallenge(w, err)
 			http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -119,7 +120,7 @@ func (a *AegisServer) wrapSSEAuth(next http.Handler) http.Handler {
 	})
 }
 
-func (a *AegisServer) authenticatedContextForRequest(r *http.Request) (context.Context, error) {
+func (a *AegisServer) authenticatedContextForRequest(r *http.Request, requestedAlias string) (context.Context, error) {
 	sessionID := strings.TrimSpace(r.URL.Query().Get("sessionId"))
 	if sessionID != "" {
 		a.mu.RLock()
@@ -129,28 +130,99 @@ func (a *AegisServer) authenticatedContextForRequest(r *http.Request) (context.C
 			return nil, fmt.Errorf("invalid session")
 		}
 
-		if key := extractAPIKeyFromRequest(r); key != "" && key != access.APIKey {
+		if access.Alias != requestedAlias {
+			return nil, fmt.Errorf("session is not authorized for this endpoint")
+		}
+
+		if token := extractAPIKeyFromRequest(r); token != "" && token != access.Token {
 			return nil, fmt.Errorf("invalid bearer token for session")
 		}
 
-		aliases, ok := a.aliasesForAPIKey(access.APIKey)
+		alias, ok := a.aliasForAPIKey(access.Token)
 		if !ok {
 			return nil, fmt.Errorf("bearer token is no longer authorized")
 		}
+		if alias != requestedAlias {
+			return nil, fmt.Errorf("bearer token is not authorized for this endpoint")
+		}
 
-		return withAccessContext(r.Context(), access.APIKey, aliases), nil
+		return withAccessContext(r.Context(), access.Token, alias), nil
 	}
 
-	key := extractAPIKeyFromRequest(r)
-	if key == "" {
+	token := extractAPIKeyFromRequest(r)
+	if token == "" {
 		return nil, fmt.Errorf("missing bearer token")
 	}
 
-	aliases, ok := a.aliasesForAPIKey(key)
+	alias, ok := a.aliasForAPIKey(token)
 	if !ok {
 		return nil, fmt.Errorf("invalid bearer token")
 	}
-	return withAccessContext(r.Context(), key, aliases), nil
+	if alias != requestedAlias {
+		return nil, fmt.Errorf("bearer token is not authorized for this endpoint")
+	}
+
+	return withAccessContext(r.Context(), token, alias), nil
+}
+
+func (a *AegisServer) handlerForRequestPath(path string) (string, http.Handler, bool) {
+	a.mu.RLock()
+	cfg := a.sseCfg
+	a.mu.RUnlock()
+	if cfg == nil {
+		return "", nil, false
+	}
+
+	basePath := strings.TrimRight(strings.TrimSpace(cfg.BasePath), "/")
+	if basePath == "" {
+		basePath = "/mcp"
+	}
+	if !strings.HasPrefix(path, basePath+"/") {
+		return "", nil, false
+	}
+
+	remainder := strings.TrimPrefix(path, basePath+"/")
+	parts := strings.Split(strings.Trim(remainder, "/"), "/")
+	if len(parts) != 2 {
+		return "", nil, false
+	}
+	if parts[1] != "sse" && parts[1] != "message" {
+		return "", nil, false
+	}
+
+	a.mu.RLock()
+	alias, ok := a.pathAliases[parts[0]]
+	a.mu.RUnlock()
+	if !ok {
+		return "", nil, false
+	}
+
+	return alias, a.sseHandlerForAlias(alias), true
+}
+
+func (a *AegisServer) sseHandlerForAlias(alias string) http.Handler {
+	a.mu.RLock()
+	if handler, exists := a.sseServers[alias]; exists {
+		a.mu.RUnlock()
+		return handler
+	}
+	cfg := a.sseCfg
+	a.mu.RUnlock()
+
+	basePath := endpointBasePath(cfg.BasePath, alias)
+	handler := mcpserver.NewSSEServer(
+		a.mcpSrv,
+		mcpserver.WithBaseURL(cfg.BaseURL),
+		mcpserver.WithBasePath(basePath),
+	)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if existing, exists := a.sseServers[alias]; exists {
+		return existing
+	}
+	a.sseServers[alias] = handler
+	return handler
 }
 
 func setBearerChallenge(w http.ResponseWriter, err error) {

@@ -31,7 +31,8 @@ Primary deployment transport:
 - `HTTPS`
 - `SSE`
 - one Aegis instance per port
-- bearer-token-filtered tool visibility per session
+- one host-scoped MCP endpoint per config file
+- one host-scoped bearer token boundary per endpoint
 
 Local fallback transport:
 
@@ -44,22 +45,23 @@ This project now treats HTTPS SSE as the recommended operator-facing deployment 
 Connection pattern:
 
 ```text
-GET /mcp/sse
+GET /mcp/HOST_ALIAS/sse
 Authorization: Bearer YOUR_TOKEN
 ```
 
 Meaning:
 
 - the port identifies the Aegis service instance
-- the bearer token identifies which host tools the client is allowed to see and call
+- the endpoint path identifies the host surface
+- the bearer token must be valid for that same host surface
 
 Important behavior:
 
 - a host config can define multiple API keys
 - those API-key values are used as accepted bearer tokens
-- the same token can be reused across multiple hosts
-- tool visibility is the union of all hosts that contain that token
-- `aegis_status` stays available to authenticated SSE clients, but only reports visible hosts
+- each token is allowed to belong to only one host config
+- each host config gets its own endpoint path derived from its alias
+- `aegis_status` stays available inside the host-scoped endpoint, but only reports that host
 
 ### Bearer-token requirement
 
@@ -80,10 +82,11 @@ Query-string tokens are not part of the recommended deployment path.
 Implementation notes:
 
 - the initial SSE request authenticates with a bearer token
-- that token is bound to the generated session ID
+- that token and host alias are bound to the generated session ID
 - later POSTs to the message endpoint can authorize through that session ID alone
 - if a POST includes both a session ID and a token, the token must match the session's stored token
-- each POST re-derives the current allowed host set from the stored token
+- the session must continue using the same host-scoped endpoint path
+- each POST re-validates that the stored token still belongs to that same host
 
 That last point matters: config changes apply to existing SSE sessions without requiring a process restart.
 
@@ -254,14 +257,15 @@ Responsibilities:
 - register host tools
 - expose `aegis_status`
 - watch config and rule directories
-- enforce bearer-token-based tool visibility for SSE sessions
+- enforce one-host-per-endpoint behavior for SSE sessions
 - start stdio or HTTPS SSE serving
 
 Key files:
 
 - `access.go`
   - request bearer-token extraction
-  - access context helpers
+  - host access index building
+  - host-scoped access context helpers
   - alias visibility helpers
 - `server.go`
   - tool registration
@@ -271,6 +275,7 @@ Key files:
   - hook registration for filtered `tools/list`
 - `sse.go`
   - HTTPS listener setup
+  - per-host endpoint routing
   - CORS handling
   - session-aware auth wrapper
 
@@ -295,8 +300,7 @@ Host config schema:
   "redaction_patterns": [],
   "host_key_fingerprint": "",
   "api_keys": [
-    "change-me-server-key",
-    "change-me-shared-ops-key"
+    "change-me-server-key"
   ]
 }
 ```
@@ -304,11 +308,13 @@ Host config schema:
 Notes:
 
 - `alias` must be unique
+- sanitized endpoint aliases must also be unique
 - `rule_profile` must match a profile in `rules/`
 - `api_keys` are normalized with trimming and de-duplication
 - `api_keys` are optional for stdio mode
 - `api_keys` are effectively required for HTTPS SSE access because SSE startup requires at least one configured token somewhere in the config set
 - for HTTPS SSE, those configured values are expected to be sent as bearer tokens in the `Authorization` header
+- for HTTPS SSE, those configured values must not be reused across different host configs
 
 ## Tool Visibility Rules
 
@@ -318,10 +324,11 @@ For unauthenticated local stdio:
 
 For authenticated SSE:
 
-- `tools/list` is filtered to the allowed host tools for that token
+- endpoint path is `/mcp/<sanitized-host-alias>/sse`
+- `tools/list` is filtered to the single allowed host for that endpoint/token pair
 - authenticated requests are expected to use `Authorization: Bearer <token>`
 - `aegis_status` remains visible
-- `aegis_status` only lists hosts visible to that token
+- `aegis_status` only lists the host for that endpoint
 - direct `tools/call` attempts against unauthorized hosts are blocked even if a client guesses a tool name
 
 This means the auth model is not "security by hidden tool list." Visibility and execution are both enforced.
@@ -340,6 +347,7 @@ Behavior:
 - host config updates refresh live config without duplicating the MCP tool registration
 - removed hosts are deleted from the in-memory registry
 - token-to-host mappings are rebuilt on every config sync
+- host-endpoint routing is rebuilt on every config sync
 - active SSE sessions pick up those token mapping changes on the next request
 
 Known limitation:
@@ -365,6 +373,7 @@ Compose behavior:
 - pulls from GHCR instead of building locally
 - defaults to `latest`
 - uses HTTPS SSE transport
+- serves one host-scoped endpoint per config file on the same HTTPS port
 - mounts:
   - `./configs` -> `/configs`
   - `./rules` -> `/rules`
@@ -386,6 +395,7 @@ Current compose env defaults:
 Operator note:
 
 - if you change the port, hostname, or both, update `AEGIS_SSE_BASE_URL` to match the externally reachable HTTPS address
+- client URLs should use `/mcp/<host-alias>/sse`, not a shared `/mcp/sse` path
 
 ## GitHub Actions Image Publishing
 
@@ -411,7 +421,7 @@ Important implementation detail:
 - raw command strings are not executed directly
 - a normalized shell-safe command is executed instead
 - command validation occurs before any SSH connection attempt
-- API keys gate tool visibility and tool execution for SSE sessions
+- host-scoped bearer tokens and host-scoped endpoints gate tool visibility and tool execution for SSE sessions
 - HTTPS SSE requests challenge with `WWW-Authenticate: Bearer ...` when the token is missing or invalid
 - if `host_key_fingerprint` is empty, host-key verification is insecure
 - TLS is required for the recommended SSE deployment model
@@ -422,6 +432,8 @@ Completed:
 
 - added HTTPS SSE transport support
 - added bearer-token-based host access control for SSE
+- changed SSE routing to one endpoint per host config
+- changed bearer tokens to single-host scope
 - added session-bound access behavior for SSE clients
 - added config support for `api_keys`
 - updated sample configs with `api_keys`

@@ -3,35 +3,71 @@ package mcp
 import (
 	"context"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"aegis-ssh-mcp/internal/config"
 )
 
-func TestBuildAPIKeyIndexAggregatesAliasesByKey(t *testing.T) {
+func TestBuildHostAccessStateBuildsSingleHostTokenMap(t *testing.T) {
 	t.Parallel()
 
 	cfgs := []*config.HostConfig{
-		{Alias: "proxmox-node", APIKeys: []string{"shared-key", "ops-key"}},
-		{Alias: "dell-r820", APIKeys: []string{"shared-key"}},
+		{Alias: "proxmox-node", APIKeys: []string{"proxmox-token"}},
+		{Alias: "dell-r820", APIKeys: []string{"dell-token"}},
 	}
 
-	index := buildAPIKeyIndex(cfgs)
-
-	if len(index["shared-key"]) != 2 {
-		t.Fatalf("expected shared-key to authorize two aliases, got %d", len(index["shared-key"]))
+	tokenAliases, pathAliases, err := buildHostAccessState(cfgs)
+	if err != nil {
+		t.Fatalf("build host access state: %v", err)
 	}
-	if _, ok := index["ops-key"]["proxmox-node"]; !ok {
-		t.Fatal("expected ops-key to authorize proxmox-node")
+
+	if got := tokenAliases["proxmox-token"]; got != "proxmox-node" {
+		t.Fatalf("expected proxmox-token to map to proxmox-node, got %q", got)
+	}
+	if got := pathAliases["dell-r820"]; got != "dell-r820" {
+		t.Fatalf("expected endpoint alias to map to dell-r820, got %q", got)
+	}
+}
+
+func TestBuildHostAccessStateRejectsSharedTokenAcrossHosts(t *testing.T) {
+	t.Parallel()
+
+	cfgs := []*config.HostConfig{
+		{Alias: "proxmox-node", APIKeys: []string{"shared-token"}},
+		{Alias: "dell-r820", APIKeys: []string{"shared-token"}},
+	}
+
+	_, _, err := buildHostAccessState(cfgs)
+	if err == nil {
+		t.Fatal("expected shared token error")
+	}
+	if !strings.Contains(err.Error(), `bearer token "shared-token" is assigned to both "proxmox-node" and "dell-r820"`) {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestBuildHostAccessStateRejectsEndpointAliasCollisions(t *testing.T) {
+	t.Parallel()
+
+	cfgs := []*config.HostConfig{
+		{Alias: "prod_box", APIKeys: []string{"prod-token"}},
+		{Alias: "prod box", APIKeys: []string{"prod-space-token"}},
+	}
+
+	_, _, err := buildHostAccessState(cfgs)
+	if err == nil {
+		t.Fatal("expected endpoint alias collision error")
+	}
+	if !strings.Contains(err.Error(), `duplicate MCP endpoint alias "prod_box"`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestVisibleAliasesForContextFiltersAccess(t *testing.T) {
 	t.Parallel()
 
-	ctx := withAccessContext(context.Background(), "demo-key", map[string]struct{}{
-		"b": {},
-	})
+	ctx := withAccessContext(context.Background(), "demo-token", "b")
 
 	got := visibleAliasesForContext(ctx, []string{"c", "b", "a"})
 	if len(got) != 1 || got[0] != "b" {
@@ -42,20 +78,28 @@ func TestVisibleAliasesForContextFiltersAccess(t *testing.T) {
 func TestExtractAPIKeyFromRequestSupportsBearerOnly(t *testing.T) {
 	t.Parallel()
 
-	req := httptest.NewRequest("GET", "https://example.com/mcp/sse", nil)
+	req := httptest.NewRequest("GET", "https://example.com/mcp/proxmox-node/sse", nil)
 	req.Header.Set("Authorization", "Bearer bearer-key")
 	if got := extractAPIKeyFromRequest(req); got != "bearer-key" {
 		t.Fatalf("expected bearer key, got %q", got)
 	}
 
-	req = httptest.NewRequest("GET", "https://example.com/mcp/sse?apiKey=query-key", nil)
+	req = httptest.NewRequest("GET", "https://example.com/mcp/proxmox-node/sse?apiKey=query-key", nil)
 	if got := extractAPIKeyFromRequest(req); got != "" {
 		t.Fatalf("expected query key to be ignored, got %q", got)
 	}
 
-	req = httptest.NewRequest("GET", "https://example.com/mcp/sse", nil)
+	req = httptest.NewRequest("GET", "https://example.com/mcp/proxmox-node/sse", nil)
 	req.Header.Set("Authorization", "query-key")
 	if got := extractAPIKeyFromRequest(req); got != "" {
 		t.Fatalf("expected non-bearer auth header to be ignored, got %q", got)
+	}
+}
+
+func TestEndpointBasePathScopesByAlias(t *testing.T) {
+	t.Parallel()
+
+	if got := endpointBasePath("/mcp", "proxmox-node"); got != "/mcp/proxmox-node" {
+		t.Fatalf("unexpected endpoint base path: %q", got)
 	}
 }

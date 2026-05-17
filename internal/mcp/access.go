@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -12,38 +13,46 @@ import (
 type accessContextKey struct{}
 
 type accessContext struct {
-	APIKey         string
-	AllowedAliases map[string]struct{}
+	Token string
+	Alias string
 }
 
-func buildAPIKeyIndex(cfgs []*config.HostConfig) map[string]map[string]struct{} {
-	index := make(map[string]map[string]struct{})
+func buildHostAccessState(cfgs []*config.HostConfig) (map[string]string, map[string]string, error) {
+	tokenAliases := make(map[string]string)
+	pathAliases := make(map[string]string)
+
 	for _, cfg := range cfgs {
-		for _, key := range cfg.APIKeys {
-			if _, exists := index[key]; !exists {
-				index[key] = make(map[string]struct{})
+		endpointAlias := sanitizeAlias(cfg.Alias)
+		if previousAlias, exists := pathAliases[endpointAlias]; exists && previousAlias != cfg.Alias {
+			return nil, nil, fmt.Errorf(
+				"duplicate MCP endpoint alias %q from %q and %q",
+				endpointAlias,
+				previousAlias,
+				cfg.Alias,
+			)
+		}
+		pathAliases[endpointAlias] = cfg.Alias
+
+		for _, token := range cfg.APIKeys {
+			if previousAlias, exists := tokenAliases[token]; exists && previousAlias != cfg.Alias {
+				return nil, nil, fmt.Errorf(
+					"bearer token %q is assigned to both %q and %q",
+					token,
+					previousAlias,
+					cfg.Alias,
+				)
 			}
-			index[key][cfg.Alias] = struct{}{}
+			tokenAliases[token] = cfg.Alias
 		}
 	}
-	return index
+
+	return tokenAliases, pathAliases, nil
 }
 
-func cloneAliasSet(in map[string]struct{}) map[string]struct{} {
-	if len(in) == 0 {
-		return map[string]struct{}{}
-	}
-	out := make(map[string]struct{}, len(in))
-	for alias := range in {
-		out[alias] = struct{}{}
-	}
-	return out
-}
-
-func withAccessContext(ctx context.Context, apiKey string, aliases map[string]struct{}) context.Context {
+func withAccessContext(ctx context.Context, token, alias string) context.Context {
 	return context.WithValue(ctx, accessContextKey{}, accessContext{
-		APIKey:         apiKey,
-		AllowedAliases: cloneAliasSet(aliases),
+		Token: token,
+		Alias: alias,
 	})
 }
 
@@ -60,10 +69,11 @@ func visibleAliasesForContext(ctx context.Context, aliases []string) []string {
 		return out
 	}
 
-	visible := make([]string, 0, len(aliases))
+	visible := make([]string, 0, 1)
 	for _, alias := range aliases {
-		if _, allowed := access.AllowedAliases[alias]; allowed {
+		if alias == access.Alias {
 			visible = append(visible, alias)
+			break
 		}
 	}
 	sort.Strings(visible)
@@ -75,8 +85,7 @@ func aliasAllowedForContext(ctx context.Context, alias string) bool {
 	if !ok {
 		return true
 	}
-	_, allowed := access.AllowedAliases[alias]
-	return allowed
+	return access.Alias == alias
 }
 
 func extractAPIKeyFromRequest(r *http.Request) string {
@@ -88,4 +97,12 @@ func extractAPIKeyFromRequest(r *http.Request) string {
 		return strings.TrimSpace(authHeader[7:])
 	}
 	return ""
+}
+
+func endpointBasePath(basePath, alias string) string {
+	base := strings.TrimRight(strings.TrimSpace(basePath), "/")
+	if base == "" {
+		base = "/mcp"
+	}
+	return base + "/" + sanitizeAlias(alias)
 }

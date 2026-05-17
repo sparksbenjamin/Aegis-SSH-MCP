@@ -35,9 +35,12 @@ type AegisServer struct {
 
 	mu            sync.RWMutex
 	configs       map[string]*config.HostConfig
-	apiKeyAliases map[string]map[string]struct{}
+	apiKeyAliases map[string]string
+	pathAliases   map[string]string
+	sseServers    map[string]http.Handler
 	sessionAccess map[string]accessContext
 	httpSrv       *http.Server
+	sseCfg        *SSEConfig
 	stopCh        chan struct{}
 	stopOnce      sync.Once
 }
@@ -71,7 +74,9 @@ func NewAegisServer(configsDir, rulesDir string, logger *audit.Logger) (*AegisSe
 		configsDir:    configsDir,
 		rulesDir:      rulesDir,
 		configs:       make(map[string]*config.HostConfig),
-		apiKeyAliases: make(map[string]map[string]struct{}),
+		apiKeyAliases: make(map[string]string),
+		pathAliases:   make(map[string]string),
+		sseServers:    make(map[string]http.Handler),
 		sessionAccess: make(map[string]accessContext),
 		stopCh:        make(chan struct{}),
 	}
@@ -191,7 +196,10 @@ func (a *AegisServer) syncConfigs() error {
 		return err
 	}
 
-	apiKeyAliases := buildAPIKeyIndex(cfgs)
+	apiKeyAliases, pathAliases, err := buildHostAccessState(cfgs)
+	if err != nil {
+		return err
+	}
 	desired := make(map[string]*config.HostConfig, len(cfgs))
 	for _, cfg := range cfgs {
 		desired[cfg.Alias] = cfg
@@ -205,9 +213,11 @@ func (a *AegisServer) syncConfigs() error {
 			continue
 		}
 		delete(a.configs, alias)
+		delete(a.sseServers, alias)
 		removed = append(removed, alias)
 	}
 	a.apiKeyAliases = apiKeyAliases
+	a.pathAliases = pathAliases
 	a.mu.Unlock()
 
 	for _, alias := range removed {
@@ -367,15 +377,12 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 	}
 }
 
-func (a *AegisServer) aliasesForAPIKey(key string) (map[string]struct{}, bool) {
+func (a *AegisServer) aliasForAPIKey(key string) (string, bool) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	aliases, ok := a.apiKeyAliases[key]
-	if !ok {
-		return nil, false
-	}
-	return cloneAliasSet(aliases), true
+	alias, ok := a.apiKeyAliases[key]
+	return alias, ok
 }
 
 // runWatcher processes fsnotify events and reacts to config and rule changes.
@@ -445,12 +452,7 @@ func toolVisibleForContext(ctx context.Context, toolName string) bool {
 		return true
 	}
 
-	for alias := range access.AllowedAliases {
-		if toolName == toolNameForAlias(alias) {
-			return true
-		}
-	}
-	return false
+	return toolName == toolNameForAlias(access.Alias)
 }
 
 // formatOutput assembles a human-readable result string from a command result.

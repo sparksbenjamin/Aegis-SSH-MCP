@@ -9,8 +9,7 @@
   "timeout_seconds": 45,
   "host_key_fingerprint": "",
   "api_keys": [
-    "change-me-dell-key",
-    "change-me-shared-ops-key"
+    "change-me-dell-key"
   ],
 
   "stealth_mode": true,

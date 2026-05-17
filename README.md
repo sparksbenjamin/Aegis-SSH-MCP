@@ -11,22 +11,24 @@ The recommended way to run Aegis is:
 - expose it over `HTTPS`
 - connect to it with MCP over `SSE`
 - send a bearer token in the `Authorization` header
-- use an `api_keys` entry in each host config to control which tools a client can see
+- give each host config its own endpoint path and its own bearer token
 
 In practice, the connection is:
 
 ```text
-GET /mcp/sse
+GET /mcp/HOST_ALIAS/sse
 Authorization: Bearer YOUR_TOKEN
 ```
 
 The port selects the Aegis instance.
-The bearer token selects which host tools that client can use.
+The endpoint path and bearer token together select exactly one host surface.
+`HOST_ALIAS` is the sanitized config alias, so `my-server` becomes `/mcp/my-server/sse`.
 
 ## What You Get
 
-- One MCP tool per host config, such as `aegis_ssh_proxmox-node`
-- Per-token tool filtering for HTTPS SSE clients
+- One MCP endpoint per host config, such as `/mcp/proxmox-node/sse`
+- One SSH tool inside that endpoint, such as `aegis_ssh_proxmox-node`
+- Per-host bearer-token isolation for HTTPS SSE clients
 - Executable and argument validation before any SSH call is made
 - Shell-safe command normalization before execution
 - Optional stealth responses
@@ -82,7 +84,8 @@ Important:
 
 - `alias` must be unique
 - `key_path` must match the container path, not the host path
-- `api_keys` are the bearer tokens your MCP clients will use
+- each bearer token must belong to only one host config
+- `api_keys` are the bearer tokens your MCP clients will use for this host endpoint
 - clients must send them as `Authorization: Bearer <token>`
 
 ### 3. Add your SSH key and TLS certs
@@ -146,7 +149,7 @@ docker compose logs -f aegis-ssh-mcp
 Use:
 
 ```text
-URL: https://aegis.example.com:8443/mcp/sse
+URL: https://aegis.example.com:8443/mcp/my-server/sse
 Header: Authorization: Bearer change-me-my-server-token
 ```
 
@@ -180,7 +183,7 @@ For real deployments, update the volume `source` paths to your host directories.
 Recommended SSE deployment:
 
 ```text
-URL: https://HOST:PORT/mcp/sse
+URL: https://HOST:PORT/mcp/HOST_ALIAS/sse
 Header: Authorization: Bearer YOUR_TOKEN
 ```
 
@@ -189,11 +192,18 @@ Example client config for clients that support SSE plus custom headers:
 ```json
 {
   "mcpServers": {
-    "aegis": {
+    "aegis-proxmox": {
       "transport": "sse",
-      "url": "https://aegis.example.com:8443/mcp/sse",
+      "url": "https://aegis.example.com:8443/mcp/proxmox-node/sse",
       "headers": {
-        "Authorization": "Bearer change-me-shared-ops-key"
+        "Authorization": "Bearer change-me-proxmox-key"
+      }
+    },
+    "aegis-dell": {
+      "transport": "sse",
+      "url": "https://aegis.example.com:8443/mcp/dell-r820/sse",
+      "headers": {
+        "Authorization": "Bearer change-me-dell-key"
       }
     }
   }
@@ -202,6 +212,7 @@ Example client config for clients that support SSE plus custom headers:
 
 This repo now treats bearer-header auth as the only documented remote auth path.
 Query-string tokens are intentionally not part of the deployment guidance.
+If you want one agent to reach two boxes, add the MCP twice with two different URLs and two different bearer tokens.
 
 ## Tools Exposed
 
@@ -213,7 +224,7 @@ It also exposes:
 
 - `aegis_status`
 
-For HTTPS SSE clients, the visible tool list is filtered by the bearer token used for that session.
+For HTTPS SSE clients, each endpoint is host-scoped and each bearer token is host-scoped.
 
 ## Local Development
 
