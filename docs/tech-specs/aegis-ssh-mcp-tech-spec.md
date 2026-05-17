@@ -310,6 +310,8 @@ Workflow steps:
 Operational note:
 
 - After the first publish, confirm the GHCR package visibility is public if you want anonymous pulls from `docker compose`
+- The Dockerfile builder image must stay aligned with the Go version declared in `go.mod`
+- The Dockerfile builds with `TARGETOS` and `TARGETARCH` so multi-arch GHCR publishing produces the correct binary per image
 
 ## Deployment Modes
 
@@ -361,6 +363,8 @@ Security posture in the container:
 
 Completed:
 
+- Dockerfile updated to use Go 1.23 in the builder stage
+- Dockerfile updated to build per-target architecture instead of hard-coding `amd64`
 - command parsing added via `github.com/google/shlex`
 - normalized shell-safe execution path added
 - executable-level rule validation added to bundled rule profiles
