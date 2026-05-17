@@ -381,7 +381,8 @@ Compose behavior:
 
 - pulls from GHCR instead of building locally
 - defaults to `latest`
-- uses HTTPS SSE transport
+- checked-in example now defaults to HTTP SSE with TLS disabled for easier local startup
+- HTTPS remains available by uncommenting the TLS env vars and cert mount
 - serves one host-scoped endpoint per config file on the same HTTPS port
 - mounts:
   - `./configs` -> `/configs`
@@ -396,11 +397,11 @@ Current compose env defaults:
 - `AEGIS_CONFIGS_DIR=/configs`
 - `AEGIS_RULES_DIR=/rules`
 - `AEGIS_SSE_ADDR=:8443`
-- `AEGIS_SSE_BASE_URL=https://localhost:8443`
+- `AEGIS_SSE_BASE_URL=http://localhost:8443`
 - `AEGIS_SSE_BASE_PATH=/mcp`
-- `AEGIS_SSE_TLS_CERT_FILE=/certs/tls.crt`
-- `AEGIS_SSE_TLS_KEY_FILE=/certs/tls.key`
-- `AEGIS_SSE_DISABLE_TLS=false`
+- `AEGIS_SSE_DISABLE_TLS=true`
+- `AEGIS_SSE_TLS_CERT_FILE` and `AEGIS_SSE_TLS_KEY_FILE` are commented out in the checked-in compose file
+- the `/certs` mount is commented out in the checked-in compose file
 
 Operator note:
 

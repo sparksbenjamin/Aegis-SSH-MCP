@@ -14,7 +14,8 @@ Each endpoint exposes that host's SSH tool and `aegis_status`. Commands are pars
 ## Quick Start
 
 You do not need to build from source to use Aegis.
-The normal deployment path is: pull the published image, mount your files, start Docker Compose, and connect your MCP client.
+The checked-in Docker Compose example defaults to local HTTP so people can start quickly.
+If you want HTTPS, the TLS lines are right there to uncomment.
 
 ### 1. Create folders on the host
 
@@ -24,7 +25,7 @@ Example:
 /opt/aegis/configs
 /opt/aegis/rules
 /opt/aegis/keys
-/opt/aegis/certs
+/opt/aegis/certs   (only if you want HTTPS)
 ```
 
 ### 2. Create a host config
@@ -56,12 +57,19 @@ What matters here:
 - clients must send the token as `Authorization: Bearer <token>`
 - if `host_key_fingerprint` is empty, Aegis will warn and use insecure host-key verification
 
-### 3. Add your SSH key and TLS certs
+### 3. Add your SSH key
+
+Expected container path:
+
+```text
+/keys/my-server.pem
+```
+
+If you want HTTPS, also add TLS certs:
 
 Expected container paths:
 
 ```text
-/keys/my-server.pem
 /certs/tls.crt
 /certs/tls.key
 ```
@@ -89,10 +97,13 @@ services:
       AEGIS_CONFIGS_DIR: /configs
       AEGIS_RULES_DIR: /rules
       AEGIS_SSE_ADDR: ":8443"
-      AEGIS_SSE_BASE_URL: https://aegis.example.com:8443
+      AEGIS_SSE_BASE_URL: http://localhost:8443
       AEGIS_SSE_BASE_PATH: /mcp
-      AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
-      AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
+      AEGIS_SSE_DISABLE_TLS: "true"
+      # Uncomment for HTTPS:
+      # AEGIS_SSE_BASE_URL: https://aegis.example.com:8443
+      # AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
+      # AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
 
     ports:
       - "8443:8443"
@@ -101,7 +112,8 @@ services:
       - /opt/aegis/configs:/configs
       - /opt/aegis/rules:/rules
       - /opt/aegis/keys:/keys:ro
-      - /opt/aegis/certs:/certs:ro
+      # Uncomment for HTTPS:
+      # - /opt/aegis/certs:/certs:ro
 ```
 
 ### 5. Start it
@@ -117,22 +129,25 @@ docker compose logs -f aegis-ssh-mcp
 If your config alias is `my-server`, the endpoint is:
 
 ```text
-URL: https://aegis.example.com:8443/mcp/my-server/sse
+URL: http://localhost:8443/mcp/my-server/sse
 Header: Authorization: Bearer change-me-my-server-token
 ```
 
 That is the main deployment flow.
+If you want HTTPS, uncomment the TLS lines in the Compose file and switch the URL to `https://...`.
 
 ## Client Examples
 
 ### One host
+
+Local HTTP example:
 
 ```json
 {
   "mcpServers": {
     "aegis-my-server": {
       "transport": "sse",
-      "url": "https://aegis.example.com:8443/mcp/my-server/sse",
+      "url": "http://localhost:8443/mcp/my-server/sse",
       "headers": {
         "Authorization": "Bearer change-me-my-server-token"
       }
@@ -166,6 +181,8 @@ If you want one agent to reach two boxes, add Aegis twice with two different URL
 }
 ```
 
+If you switch the server to HTTPS, change those URLs to `https://...`.
+
 ## How Aegis Maps Hosts
 
 - Config alias `my-server` becomes endpoint `/mcp/my-server/sse`
@@ -191,9 +208,7 @@ Important behavior:
 
 ## Optional Local HTTP Mode
 
-HTTPS is the normal deployment mode.
-
-For local or lab testing only, you can disable TLS:
+The checked-in Docker Compose example defaults to local or lab HTTP mode:
 
 ```text
 AEGIS_SSE_DISABLE_TLS=true
@@ -213,6 +228,13 @@ URL: http://localhost:8443/mcp/my-server/sse
 Header: Authorization: Bearer change-me-my-server-token
 ```
 
+To switch to HTTPS:
+
+- set `AEGIS_SSE_DISABLE_TLS=false`
+- set `AEGIS_SSE_BASE_URL=https://your-host:8443`
+- uncomment `AEGIS_SSE_TLS_CERT_FILE` and `AEGIS_SSE_TLS_KEY_FILE`
+- uncomment the `/certs` mount
+
 ## Docker Compose Notes
 
 The repo copy of [docker-compose.yml](docker-compose.yml) uses relative mounts for running from this checkout.
@@ -228,7 +250,8 @@ Example `.env`:
 
 ```dotenv
 AEGIS_SSE_PORT=8443
-AEGIS_SSE_BASE_URL=https://aegis.example.com:8443
+AEGIS_SSE_BASE_URL=http://localhost:8443
+AEGIS_SSE_DISABLE_TLS=true
 AEGIS_IMAGE_TAG=latest
 ```
 

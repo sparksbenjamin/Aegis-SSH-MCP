@@ -7,8 +7,8 @@
 #
 # By default this service pulls the published image from GitHub Container
 # Registry (GHCR). Set AEGIS_IMAGE_TAG to pin a specific published version.
-
-version: "3.9"
+# This checked-in example defaults to local HTTP SSE with TLS disabled.
+# Uncomment the TLS lines below if you want HTTPS.
 
 services:
   aegis-ssh-mcp:
@@ -21,10 +21,12 @@ services:
       AEGIS_CONFIGS_DIR: /configs
       AEGIS_RULES_DIR: /rules
       AEGIS_SSE_ADDR: ":${AEGIS_SSE_PORT:-8443}"
-      AEGIS_SSE_BASE_URL: ${AEGIS_SSE_BASE_URL:-https://localhost:8443}
+      AEGIS_SSE_BASE_URL: ${AEGIS_SSE_BASE_URL:-http://localhost:8443}
       AEGIS_SSE_BASE_PATH: /mcp
-      AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
-      AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
+      AEGIS_SSE_DISABLE_TLS: "${AEGIS_SSE_DISABLE_TLS:-true}"
+      # Uncomment for HTTPS:
+      # AEGIS_SSE_TLS_CERT_FILE: /certs/tls.crt
+      # AEGIS_SSE_TLS_KEY_FILE: /certs/tls.key
 
     ports:
       - "${AEGIS_SSE_PORT:-8443}:${AEGIS_SSE_PORT:-8443}"
@@ -46,11 +48,11 @@ services:
         target: /keys
         read_only: true
 
-      # TLS material for HTTPS SSE.
-      - type: bind
-        source: ./certs
-        target: /certs
-        read_only: true
+      # Uncomment for HTTPS:
+      # - type: bind
+      #   source: ./certs
+      #   target: /certs
+      #   read_only: true
 
     cap_drop:
       - ALL
