@@ -16,6 +16,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"aegis-ssh-mcp/internal/audit"
+	"aegis-ssh-mcp/internal/command"
 	"aegis-ssh-mcp/internal/config"
 	"aegis-ssh-mcp/internal/rules"
 	sshexec "aegis-ssh-mcp/internal/ssh"
@@ -133,7 +134,7 @@ func (a *AegisServer) registerHostTool(cfg *config.HostConfig) {
 			"command",
 			mcp.Required(),
 			mcp.Description(
-				"The shell command to execute on the remote host. The Aegis filter validates it before any network connection is made. Command chaining (&&, ;, ||, |) is typically blocked.",
+				"The command to execute on the remote host. Aegis parses it into argv, validates the executable and arguments, then executes a normalized shell-safe form. Shell chaining and expansion features are intentionally blocked or neutralized.",
 			),
 		),
 	)
@@ -230,10 +231,24 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 	return func(_ context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		start := time.Now()
 
-		command, _ := req.Params.Arguments["command"].(string)
-		command = strings.TrimSpace(command)
-		if command == "" {
+		rawCommand, _ := req.Params.Arguments["command"].(string)
+		rawCommand = strings.TrimSpace(rawCommand)
+		if rawCommand == "" {
 			return mcp.NewToolResultError("'command' parameter must be a non-empty string"), nil
+		}
+
+		parsed, err := command.Parse(rawCommand)
+		if err != nil {
+			logEntry := audit.Entry{
+				AgentAlias:       alias,
+				CommandRequested: rawCommand,
+				ValidationResult: "FAIL",
+				ValidationReason: err.Error(),
+				DurationMs:       time.Since(start).Milliseconds(),
+			}
+			a.logger.Log(logEntry)
+
+			return mcp.NewToolResultError("AEGIS BLOCKED - " + err.Error()), nil
 		}
 
 		a.mu.RLock()
@@ -245,10 +260,10 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			), nil
 		}
 
-		validation := a.ruleEngine.Validate(cfg.RuleProfile, command)
+		validation := a.ruleEngine.Validate(cfg.RuleProfile, parsed)
 		logEntry := audit.Entry{
 			AgentAlias:       alias,
-			CommandRequested: command,
+			CommandRequested: rawCommand,
 			ValidationResult: "PASS",
 			ValidationReason: validation.Reason,
 		}
@@ -270,7 +285,7 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("AEGIS BLOCKED - " + validation.Reason), nil
 		}
 
-		result, err := sshexec.Execute(cfg, command)
+		result, err := sshexec.Execute(cfg, parsed.Normalized)
 		if err != nil {
 			logEntry.ValidationResult = "EXEC_ERROR"
 			logEntry.ValidationReason = err.Error()

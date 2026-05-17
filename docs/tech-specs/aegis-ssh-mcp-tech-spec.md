@@ -10,9 +10,11 @@ Its main job is to act as a command firewall:
 
 1. Receive a tool call from an MCP client.
 2. Map that tool call to a configured host.
-3. Validate the requested command against a named rule profile.
-4. Only if validation passes, open a single SSH session and run the command.
-5. Return output to the caller and write an audit record to `stderr`.
+3. Parse the requested command into executable plus arguments.
+4. Validate the parsed command against a named rule profile.
+5. Rebuild the argv into a normalized shell-safe command string.
+6. Only if validation passes, open a single SSH session and run the normalized command.
+7. Return output to the caller and write an audit record to `stderr`.
 
 ## Current Repo Layout
 
@@ -30,6 +32,9 @@ Its main job is to act as a command firewall:
 |-- internal/
 |   |-- audit/
 |   |   `-- logger.go
+|   |-- command/
+|   |   |-- command.go
+|   |   `-- command_test.go
 |   |-- config/
 |   |   |-- loader.go
 |   |   `-- loader_test.go
@@ -93,18 +98,34 @@ Tool naming:
 Per host tool call:
 
 1. Read the `command` argument.
-2. Look up the live host config by alias.
-3. Validate the command with the configured rule profile.
-4. If blocked:
+2. Parse it with `github.com/google/shlex`.
+3. Look up the live host config by alias.
+4. Validate the parsed executable, arguments, and normalized command with the configured rule profile.
+5. If blocked:
    - log a failed audit record
    - return a block message, or a fake response if stealth mode is enabled
-5. If allowed:
-   - execute a single SSH command
+6. If allowed:
+   - execute the normalized shell-safe command string
    - apply output redaction if enabled
    - log the result
    - return combined stdout/stderr text
 
+Important behavior:
+
+- Aegis no longer executes the raw input string directly.
+- It executes a normalized command rebuilt from parsed argv.
+- This neutralizes operator tricks such as quoted separators, command substitution payloads, and similar shell syntax from being interpreted as extra shell structure.
+
 ## Package Responsibilities
+
+### `internal/command`
+
+Responsibilities:
+
+- Parse shell-style quoting into argv
+- Reject control characters
+- Normalize tokens into a shell-safe command string
+- Preserve separate executable, argument, and normalized full-command views for validation
 
 ### `internal/config`
 
@@ -133,8 +154,12 @@ Responsibilities:
 
 Validation order:
 
-1. Blacklist first
-2. Whitelist second
+1. Executable blacklist
+2. Arguments blacklist
+3. Legacy full-command blacklist
+4. Executable whitelist
+5. Arguments whitelist
+6. Legacy full-command whitelist
 
 Important behavior:
 
@@ -218,6 +243,8 @@ Rule profile schema:
 ```json
 {
   "profile_name": "readonly-safe",
+  "executable_whitelist_regex": ["^ls$"],
+  "arguments_blacklist_regex": ["(^| )--privileged($| )"],
   "whitelist_regex": ["^ls(\\s|$)"],
   "blacklist_regex": ["rm\\s"]
 }
@@ -225,6 +252,9 @@ Rule profile schema:
 
 Recommended authoring guidance:
 
+- Prefer `executable_whitelist_regex` for the primary allowlist boundary.
+- Use `arguments_whitelist_regex` and `arguments_blacklist_regex` for flag-level constraints.
+- Keep legacy `whitelist_regex` and `blacklist_regex` for full-command patterns that still add value.
 - Keep blacklist patterns broad enough to stop obvious escape hatches
 - Keep whitelist patterns intentionally narrow
 - Prefer exact command prefixes over permissive wildcard rules
@@ -331,6 +361,9 @@ Security posture in the container:
 
 Completed:
 
+- command parsing added via `github.com/google/shlex`
+- normalized shell-safe execution path added
+- executable-level rule validation added to bundled rule profiles
 - GitHub Actions workflow added for Docker image publishing to GHCR
 - `docker-compose.yml` switched from local build to GHCR pulls
 - README updated for the published image flow
@@ -338,7 +371,8 @@ Completed:
 
 Notes:
 
-- The local Go code was not changed in this session
+- `go test ./...` passed after the parser and rule engine changes
+- `go build -buildvcs=false ./...` passed in the local workspace
 - The GitHub Actions workflow was added but not executed inside this workspace
 - GHCR package visibility may need a one-time check after the first publish
 

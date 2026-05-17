@@ -1,5 +1,10 @@
 {
   "profile_name": "docker-ops",
+  "executable_whitelist_regex": [
+    "^docker$",
+    "^docker-compose$",
+    "^systemctl$"
+  ],
   "whitelist_regex": [
     "^docker\\s+",
     "^docker-compose\\s+",

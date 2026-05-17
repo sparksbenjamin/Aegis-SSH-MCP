@@ -1,5 +1,19 @@
 {
   "profile_name": "docker-readonly",
+  "executable_whitelist_regex": [
+    "^docker$",
+    "^systemctl$",
+    "^journalctl$",
+    "^df$",
+    "^free$",
+    "^uptime$",
+    "^uname$",
+    "^hostname$",
+    "^date$",
+    "^ls$",
+    "^cat$",
+    "^top$"
+  ],
   "whitelist_regex": [
     "^docker\\s+(ps|images|stats|logs|inspect|info|version|network\\s+ls|volume\\s+ls)",
     "^docker\\s+compose\\s+(ps|logs|config)",

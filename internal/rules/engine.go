@@ -9,16 +9,26 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"aegis-ssh-mcp/internal/command"
 )
 
 // Profile is the in-memory representation of a rules/*.json security profile.
 type Profile struct {
-	ProfileName    string   `json:"profile_name"`
-	WhitelistRegex []string `json:"whitelist_regex"`
-	BlacklistRegex []string `json:"blacklist_regex"`
+	ProfileName              string   `json:"profile_name"`
+	WhitelistRegex           []string `json:"whitelist_regex"`
+	BlacklistRegex           []string `json:"blacklist_regex"`
+	ExecutableWhitelistRegex []string `json:"executable_whitelist_regex"`
+	ExecutableBlacklistRegex []string `json:"executable_blacklist_regex"`
+	ArgumentsWhitelistRegex  []string `json:"arguments_whitelist_regex"`
+	ArgumentsBlacklistRegex  []string `json:"arguments_blacklist_regex"`
 
-	compiledWhitelist []*regexp.Regexp
-	compiledBlacklist []*regexp.Regexp
+	compiledWhitelist           []*regexp.Regexp
+	compiledBlacklist           []*regexp.Regexp
+	compiledExecutableWhitelist []*regexp.Regexp
+	compiledExecutableBlacklist []*regexp.Regexp
+	compiledArgumentsWhitelist  []*regexp.Regexp
+	compiledArgumentsBlacklist  []*regexp.Regexp
 }
 
 // ValidationResult is the output of Engine.Validate.
@@ -118,12 +128,40 @@ func loadProfile(path string) (*Profile, error) {
 		}
 		p.compiledBlacklist = append(p.compiledBlacklist, re)
 	}
+	for _, raw := range p.ExecutableWhitelistRegex {
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid executable whitelist regex %q in %s: %w", raw, path, err)
+		}
+		p.compiledExecutableWhitelist = append(p.compiledExecutableWhitelist, re)
+	}
+	for _, raw := range p.ExecutableBlacklistRegex {
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid executable blacklist regex %q in %s: %w", raw, path, err)
+		}
+		p.compiledExecutableBlacklist = append(p.compiledExecutableBlacklist, re)
+	}
+	for _, raw := range p.ArgumentsWhitelistRegex {
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid arguments whitelist regex %q in %s: %w", raw, path, err)
+		}
+		p.compiledArgumentsWhitelist = append(p.compiledArgumentsWhitelist, re)
+	}
+	for _, raw := range p.ArgumentsBlacklistRegex {
+		re, err := regexp.Compile(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid arguments blacklist regex %q in %s: %w", raw, path, err)
+		}
+		p.compiledArgumentsBlacklist = append(p.compiledArgumentsBlacklist, re)
+	}
 
 	return &p, nil
 }
 
 // Validate runs the blacklist first, then the whitelist for the named profile.
-func (e *Engine) Validate(profileName, command string) ValidationResult {
+func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationResult {
 	e.mu.RLock()
 	profile, ok := e.profiles[profileName]
 	e.mu.RUnlock()
@@ -135,8 +173,26 @@ func (e *Engine) Validate(profileName, command string) ValidationResult {
 		}
 	}
 
+	for _, re := range profile.compiledExecutableBlacklist {
+		if re.MatchString(cmd.Executable) {
+			return ValidationResult{
+				Passed: false,
+				Reason: fmt.Sprintf("executable %q matches blacklist pattern /%s/", cmd.Executable, re.String()),
+			}
+		}
+	}
+
+	for _, re := range profile.compiledArgumentsBlacklist {
+		if re.MatchString(cmd.NormalizedArgs) {
+			return ValidationResult{
+				Passed: false,
+				Reason: fmt.Sprintf("arguments match blacklist pattern /%s/", re.String()),
+			}
+		}
+	}
+
 	for _, re := range profile.compiledBlacklist {
-		if re.MatchString(command) {
+		if re.MatchString(cmd.Normalized) {
 			return ValidationResult{
 				Passed: false,
 				Reason: fmt.Sprintf("matches blacklist pattern /%s/", re.String()),
@@ -144,10 +200,42 @@ func (e *Engine) Validate(profileName, command string) ValidationResult {
 		}
 	}
 
+	if len(profile.compiledExecutableWhitelist) > 0 {
+		matched := false
+		for _, re := range profile.compiledExecutableWhitelist {
+			if re.MatchString(cmd.Executable) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return ValidationResult{
+				Passed: false,
+				Reason: "executable does not match any whitelist pattern in profile " + profileName,
+			}
+		}
+	}
+
+	if len(profile.compiledArgumentsWhitelist) > 0 {
+		matched := false
+		for _, re := range profile.compiledArgumentsWhitelist {
+			if re.MatchString(cmd.NormalizedArgs) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return ValidationResult{
+				Passed: false,
+				Reason: "arguments do not match any whitelist pattern in profile " + profileName,
+			}
+		}
+	}
+
 	if len(profile.compiledWhitelist) > 0 {
 		matched := false
 		for _, re := range profile.compiledWhitelist {
-			if re.MatchString(command) {
+			if re.MatchString(cmd.Normalized) {
 				matched = true
 				break
 			}

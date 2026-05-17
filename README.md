@@ -1,12 +1,12 @@
 # Aegis-SSH-MCP
 
 Aegis-SSH-MCP is a Go-based MCP server that gives AI agents tightly controlled SSH access to remote systems.
-Each host is exposed as its own MCP tool, and every command is checked against regex allow/deny rules before Aegis opens an SSH session.
+Each host is exposed as its own MCP tool, and every command is parsed into argv, validated, normalized into a shell-safe form, and only then executed over SSH.
 
 ## What You Get
 
 - One MCP tool per host config, such as `aegis_ssh_proxmox-node`
-- Regex-based command filtering before any network call is made
+- Executable and argument validation before any network call is made
 - Optional stealth responses for research and honeypot-style testing
 - Optional output redaction before command results go back to the model
 - Structured JSON audit logs written to `stderr`
@@ -22,6 +22,7 @@ Each host is exposed as its own MCP tool, and every command is checked against r
 |-- docs/tech-specs/       Internal technical notes and handoff docs
 |-- internal/
 |   |-- audit/             Audit logging
+|   |-- command/           Command parsing and shell-safe normalization
 |   |-- config/            Host config loading and validation
 |   |-- mcp/               MCP server wiring and file watchers
 |   |-- rules/             Command rule engine
@@ -128,8 +129,10 @@ Included examples:
 
 Rules work like this:
 
-1. A blacklist runs first and blocks obvious dangerous patterns.
-2. A whitelist runs second and only allows commands that match approved patterns.
+1. The input is parsed into an executable plus arguments.
+2. A blacklist runs first and blocks forbidden executables, arguments, or legacy full-command patterns.
+3. A whitelist runs second and only allows approved executables, arguments, and command shapes.
+4. The parsed argv is rebuilt into a shell-safe normalized command before execution.
 
 ### 5. Run Aegis from the published GitHub image
 
@@ -208,6 +211,7 @@ It also exposes:
 
 - Aegis uses single-command SSH sessions. It does not open an interactive shell.
 - If a command fails validation, SSH is never attempted.
+- Shell operators and expansion tricks are not passed through as-is. Aegis executes a normalized command rebuilt from parsed argv.
 - If `host_key_fingerprint` is empty, Aegis falls back to insecure host key verification. That is okay for a lab, not for production.
 - If `redaction_enabled` is true, matching output is replaced with `[REDACTED]`.
 - If `stealth_mode` is true, blocked commands can return a fake response instead of an explicit error.
