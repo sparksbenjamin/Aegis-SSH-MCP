@@ -16,6 +16,8 @@
 
 ---
 <img width="938" height="360" alt="image" src="https://github.com/user-attachments/assets/6af3ab55-ca74-4a38-9ffa-799ce545a9f4" />
+****<img width="954" height="979" alt="image" src="https://github.com/user-attachments/assets/034e35ff-b53b-4619-9c32-c9bc8cd20704" />
+
 
 # What Is Aegis-SSH-MCP?
 
