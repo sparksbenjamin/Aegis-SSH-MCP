@@ -33,6 +33,7 @@
     "^timedatectl\\s+status(\\s|$)",
     "^ls(\\s|$)",
     "^cat\\s+/etc/(os-release|redhat-release|centos-release|rocky-release|almalinux-release)(\\s|$)",
+    "^cat\\s+/var/log/\\S+(\\s|$)",
     "^uname(\\s|$)",
     "^hostname(\\s|$)",
     "^df(\\s|$)",

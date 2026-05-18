@@ -33,6 +33,7 @@
     "^lsb_release\\s+-a(\\s|$)",
     "^ls(\\s|$)",
     "^cat\\s+/etc/(os-release|debian_version|issue|issue.net)(\\s|$)",
+    "^cat\\s+/var/log/\\S+(\\s|$)",
     "^uname(\\s|$)",
     "^hostname(\\s|$)",
     "^df(\\s|$)",
