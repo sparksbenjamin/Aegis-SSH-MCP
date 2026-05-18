@@ -22,17 +22,30 @@ func TestParseBuildsNormalizedShellSafeCommand(t *testing.T) {
 	if got, want := parsed.NormalizedArgs, `ps --format '{{.Names}}'`; got != want {
 		t.Fatalf("unexpected normalized args: got %q want %q", got, want)
 	}
+	if parsed.HasPipes {
+		t.Fatal("did not expect pipeline flag for a single command")
+	}
 }
 
-func TestParseRejectsShellPipelines(t *testing.T) {
+func TestParseBuildsNormalizedPipeline(t *testing.T) {
 	t.Parallel()
 
-	_, err := Parse(`systemctl list-units --type=service --state=running | grep -iE 'jellyfin'`)
-	if err == nil {
-		t.Fatal("expected pipe operator parse to fail")
+	parsed, err := Parse(`systemctl list-units --type=service --state=running | grep -iE 'jellyfin'`)
+	if err != nil {
+		t.Fatalf("parse command: %v", err)
 	}
-	if !strings.Contains(err.Error(), `shell control operator "|" is not allowed`) {
-		t.Fatalf("unexpected error: %v", err)
+
+	if !parsed.HasPipes {
+		t.Fatal("expected pipeline flag to be set")
+	}
+	if got, want := len(parsed.Segments), 2; got != want {
+		t.Fatalf("unexpected segment count: got %d want %d", got, want)
+	}
+	if got, want := parsed.Normalized, `systemctl list-units --type=service --state=running | grep -iE jellyfin`; got != want {
+		t.Fatalf("unexpected normalized pipeline: got %q want %q", got, want)
+	}
+	if got, want := parsed.Segments[1].Executable, "grep"; got != want {
+		t.Fatalf("unexpected second executable: got %q want %q", got, want)
 	}
 }
 
@@ -62,5 +75,31 @@ func TestParseAllowsPipeCharacterInsideQuotedArgument(t *testing.T) {
 
 	if got, want := parsed.Normalized, `grep -iE 'media|server|streaming' /var/log/app.log`; got != want {
 		t.Fatalf("unexpected normalized command: got %q want %q", got, want)
+	}
+}
+
+func TestParseRejectsCommandChainingAndRedirects(t *testing.T) {
+	t.Parallel()
+
+	cases := []string{
+		`echo hello; rm -rf /`,
+		`cat /etc/passwd > /tmp/out`,
+		`echo hi && whoami`,
+		`printf foo |& tee out`,
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Parse(tc)
+			if err == nil {
+				t.Fatalf("expected parse of %q to fail", tc)
+			}
+			if !strings.Contains(err.Error(), "shell control operator") {
+				t.Fatalf("unexpected error for %q: %v", tc, err)
+			}
+		})
 	}
 }

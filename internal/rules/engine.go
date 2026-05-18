@@ -37,6 +37,12 @@ type ValidationResult struct {
 	Reason string
 }
 
+type commandView struct {
+	Executable     string
+	NormalizedArgs string
+	Normalized     string
+}
+
 // Engine loads and caches all rule profiles and validates commands against them.
 type Engine struct {
 	mu       sync.RWMutex
@@ -173,11 +179,35 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		}
 	}
 
+	first := commandView{
+		Executable:     cmd.Executable,
+		NormalizedArgs: cmd.NormalizedArgs,
+		Normalized:     cmd.Segments[0].Normalized,
+	}
+	if result := validateProfileCommand(profileName, profile, first, ""); !result.Passed {
+		return result
+	}
+
+	for i := 1; i < len(cmd.Segments); i++ {
+		if result := validatePipelineFilterSegment(cmd.Segments[i], i+1); !result.Passed {
+			return result
+		}
+	}
+
+	return ValidationResult{Passed: true, Reason: "OK"}
+}
+
+func validateProfileCommand(profileName string, profile *Profile, cmd commandView, scope string) ValidationResult {
+	label := "command"
+	if scope != "" {
+		label = scope
+	}
+
 	for _, re := range profile.compiledExecutableBlacklist {
 		if re.MatchString(cmd.Executable) {
 			return ValidationResult{
 				Passed: false,
-				Reason: fmt.Sprintf("executable %q matches blacklist pattern /%s/", cmd.Executable, re.String()),
+				Reason: fmt.Sprintf("%s executable %q matches blacklist pattern /%s/", label, cmd.Executable, re.String()),
 			}
 		}
 	}
@@ -186,7 +216,7 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		if re.MatchString(cmd.NormalizedArgs) {
 			return ValidationResult{
 				Passed: false,
-				Reason: fmt.Sprintf("arguments match blacklist pattern /%s/", re.String()),
+				Reason: fmt.Sprintf("%s arguments match blacklist pattern /%s/", label, re.String()),
 			}
 		}
 	}
@@ -195,7 +225,7 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		if re.MatchString(cmd.Normalized) {
 			return ValidationResult{
 				Passed: false,
-				Reason: fmt.Sprintf("matches blacklist pattern /%s/", re.String()),
+				Reason: fmt.Sprintf("%s matches blacklist pattern /%s/", label, re.String()),
 			}
 		}
 	}
@@ -211,7 +241,7 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		if !matched {
 			return ValidationResult{
 				Passed: false,
-				Reason: "executable does not match any whitelist pattern in profile " + profileName,
+				Reason: label + " executable does not match any whitelist pattern in profile " + profileName,
 			}
 		}
 	}
@@ -227,7 +257,7 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		if !matched {
 			return ValidationResult{
 				Passed: false,
-				Reason: "arguments do not match any whitelist pattern in profile " + profileName,
+				Reason: label + " arguments do not match any whitelist pattern in profile " + profileName,
 			}
 		}
 	}
@@ -243,8 +273,193 @@ func (e *Engine) Validate(profileName string, cmd *command.Parsed) ValidationRes
 		if !matched {
 			return ValidationResult{
 				Passed: false,
-				Reason: "command does not match any whitelist pattern in profile " + profileName,
+				Reason: label + " does not match any whitelist pattern in profile " + profileName,
 			}
+		}
+	}
+
+	return ValidationResult{Passed: true, Reason: "OK"}
+}
+
+func validatePipelineFilterSegment(seg command.Segment, position int) ValidationResult {
+	scope := fmt.Sprintf("pipeline segment %d", position)
+
+	switch seg.Executable {
+	case "grep":
+		return validatePipelineGrep(seg, scope)
+	case "head":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-q": true, "-v": true,
+		}, map[string]bool{
+			"-n": true, "-c": true,
+		})
+	case "tail":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-q": true, "-v": true, "-f": true,
+		}, map[string]bool{
+			"-n": true, "-c": true,
+		})
+	case "sort":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-r": true, "-u": true, "-n": true, "-h": true, "-V": true, "-f": true, "-b": true,
+		}, map[string]bool{
+			"-k": true, "-t": true,
+		})
+	case "uniq":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-c": true, "-d": true, "-u": true, "-i": true,
+		}, map[string]bool{
+			"-f": true, "-s": true, "-w": true,
+		})
+	case "wc":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-l": true, "-w": true, "-c": true, "-m": true, "-L": true,
+		}, nil)
+	case "cut":
+		return validatePipelineOptionOnly(seg, scope, map[string]bool{
+			"-s": true, "--complement": true,
+		}, map[string]bool{
+			"-d": true, "-f": true, "-c": true, "-b": true,
+		})
+	case "tr":
+		return validatePipelineTR(seg, scope)
+	default:
+		return ValidationResult{
+			Passed: false,
+			Reason: fmt.Sprintf("%s executable %q is not an allowed pipeline filter", scope, seg.Executable),
+		}
+	}
+}
+
+func validatePipelineGrep(seg command.Segment, scope string) ValidationResult {
+	args := seg.Args
+	patternCount := 0
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			patternCount++
+			continue
+		}
+
+		switch arg {
+		case "-i", "-v", "-n", "-E", "-F", "-G", "-P", "-w", "-x", "-o", "-c":
+			continue
+		case "-m", "-A", "-B", "-C":
+			i++
+			if i >= len(args) {
+				return ValidationResult{
+					Passed: false,
+					Reason: fmt.Sprintf("%s option %q requires a value", scope, arg),
+				}
+			}
+			continue
+		default:
+			if strings.HasPrefix(arg, "--") {
+				return ValidationResult{
+					Passed: false,
+					Reason: fmt.Sprintf("%s option %q is not allowed for grep pipeline filters", scope, arg),
+				}
+			}
+			for _, ch := range arg[1:] {
+				switch ch {
+				case 'i', 'v', 'n', 'E', 'F', 'G', 'P', 'w', 'x', 'o', 'c':
+					continue
+				default:
+					return ValidationResult{
+						Passed: false,
+						Reason: fmt.Sprintf("%s option %q is not allowed for grep pipeline filters", scope, arg),
+					}
+				}
+			}
+		}
+	}
+
+	if patternCount != 1 {
+		return ValidationResult{
+			Passed: false,
+			Reason: fmt.Sprintf("%s grep filters must provide exactly one pattern and no file operands", scope),
+		}
+	}
+
+	return ValidationResult{Passed: true, Reason: "OK"}
+}
+
+func validatePipelineOptionOnly(seg command.Segment, scope string, allowedFlags map[string]bool, valueFlags map[string]bool) ValidationResult {
+	args := seg.Args
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") || arg == "-" {
+			return ValidationResult{
+				Passed: false,
+				Reason: fmt.Sprintf("%s %s filters may only use stdin and options, not file operands", scope, seg.Executable),
+			}
+		}
+
+		if valueFlags != nil && valueFlags[arg] {
+			i++
+			if i >= len(args) {
+				return ValidationResult{
+					Passed: false,
+					Reason: fmt.Sprintf("%s option %q requires a value", scope, arg),
+				}
+			}
+			continue
+		}
+		if allowedFlags != nil && allowedFlags[arg] {
+			continue
+		}
+
+		if strings.HasPrefix(arg, "--") {
+			return ValidationResult{
+				Passed: false,
+				Reason: fmt.Sprintf("%s option %q is not allowed for %s pipeline filters", scope, arg, seg.Executable),
+			}
+		}
+
+		validCombined := true
+		for _, ch := range arg[1:] {
+			flag := "-" + string(ch)
+			if allowedFlags == nil || !allowedFlags[flag] {
+				validCombined = false
+				break
+			}
+		}
+		if !validCombined {
+			return ValidationResult{
+				Passed: false,
+				Reason: fmt.Sprintf("%s option %q is not allowed for %s pipeline filters", scope, arg, seg.Executable),
+			}
+		}
+	}
+
+	return ValidationResult{Passed: true, Reason: "OK"}
+}
+
+func validatePipelineTR(seg command.Segment, scope string) ValidationResult {
+	args := seg.Args
+	operands := 0
+
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if strings.HasPrefix(arg, "-") && arg != "-" && operands == 0 {
+			switch arg {
+			case "-d", "-s", "-c":
+				continue
+			default:
+				return ValidationResult{
+					Passed: false,
+					Reason: fmt.Sprintf("%s option %q is not allowed for tr pipeline filters", scope, arg),
+				}
+			}
+		}
+		operands++
+	}
+
+	if operands != 2 {
+		return ValidationResult{
+			Passed: false,
+			Reason: fmt.Sprintf("%s tr filters must provide exactly two character sets", scope),
 		}
 	}
 

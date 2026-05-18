@@ -38,12 +38,13 @@ The repo ships with these starter profiles:
 Before Aegis runs any SSH command, it does this:
 
 1. Parse the requested command into an executable and arguments.
-2. Reject shell control features such as pipes, redirects, chaining, and command substitution.
-3. Rebuild the parsed command into a normalized shell-safe command string.
-4. Load the rule profile named in the host config.
-5. Apply blacklist checks first.
-6. Apply whitelist checks second.
-7. Only run the SSH command if all checks pass.
+2. Allow limited pipelines through safe text filters such as `grep`, `head`, `tail`, `sort`, `uniq`, `wc`, `cut`, and `tr`.
+3. Reject shell control features such as redirects, chaining, and command substitution.
+4. Rebuild the parsed command into a normalized shell-safe command string.
+5. Load the rule profile named in the host config.
+6. Apply blacklist checks first.
+7. Apply whitelist checks second.
+8. Only run the SSH command if all checks pass.
 
 If any check fails, SSH is never attempted.
 

@@ -122,6 +122,41 @@ func TestValidateSupportsExecutableAndArgumentRules(t *testing.T) {
 	}
 }
 
+func TestValidateAllowsPipelinesThroughSafeTextFilters(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "systemd.json"), []byte(`{
+  "profile_name": "systemd-ops",
+  "executable_whitelist_regex": ["^systemctl$"],
+  "whitelist_regex": ["^systemctl\\s+list-units(\\s|$)"]
+}`), 0o600)
+	if err != nil {
+		t.Fatalf("write rule file: %v", err)
+	}
+
+	engine, err := NewEngine(dir)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	allowedCmd, err := command.Parse(`systemctl list-units --type=service --state=running | grep -iE 'media|server|streaming|jellyfin|plex'`)
+	if err != nil {
+		t.Fatalf("parse allowed pipeline: %v", err)
+	}
+	if result := engine.Validate("systemd-ops", allowedCmd); !result.Passed {
+		t.Fatalf("expected allowed pipeline to pass, got %q", result.Reason)
+	}
+
+	blockedCmd, err := command.Parse(`systemctl list-units --type=service --state=running | bash`)
+	if err != nil {
+		t.Fatalf("parse blocked pipeline: %v", err)
+	}
+	if result := engine.Validate("systemd-ops", blockedCmd); result.Passed {
+		t.Fatal("expected disallowed pipeline filter to fail")
+	}
+}
+
 func TestBundledProfilesLoadFromRepoRulesDir(t *testing.T) {
 	t.Parallel()
 

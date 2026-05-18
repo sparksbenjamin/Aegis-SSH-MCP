@@ -223,7 +223,8 @@ Instead it:
 - parses the request into tokens
 - validates executable and arguments separately
 - rebuilds a normalized shell-safe command form
-- blocks shell control features like pipes, redirects, chaining, and command substitution
+- allows limited pipelines through safe text filters
+- blocks redirects, chaining, and command substitution
 
 This is a strong improvement over naive string matching.
 
