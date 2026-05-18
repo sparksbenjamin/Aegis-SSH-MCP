@@ -105,6 +105,7 @@ That last point matters: config changes apply to existing SSE sessions without r
 |   |-- dell-r820.json
 |   `-- proxmox-node.json
 |-- docs/
+|   |-- rules.md
 |   `-- tech-specs/
 |       `-- aegis-ssh-mcp-tech-spec.md
 |-- internal/
@@ -237,6 +238,10 @@ Validation order:
 4. executable whitelist
 5. arguments whitelist
 6. legacy full-command whitelist
+
+Operator note:
+
+- the practical authoring guide for custom rule files lives in [docs/rules.md](../rules.md)
 
 ### `internal/ssh`
 

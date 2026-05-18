@@ -199,6 +199,10 @@ Included examples:
 - `docker-readonly`
 - `docker-ops`
 
+Full rule authoring guide:
+
+- [docs/rules.md](docs/rules.md)
+
 Important behavior:
 
 - commands are validated before SSH is attempted
@@ -279,3 +283,4 @@ go build -buildvcs=false ./...
 The living technical notes are here:
 
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
+- [docs/rules.md](docs/rules.md)
