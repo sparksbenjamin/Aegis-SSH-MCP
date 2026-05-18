@@ -202,10 +202,12 @@ func TestBundledDistroProfilesRepresentativeCommands(t *testing.T) {
 		allowed bool
 	}{
 		{name: "debian readonly apt list", profile: "debian-readonly", command: "apt list --installed", allowed: true},
+		{name: "debian readonly allows ls", profile: "debian-readonly", command: "ls -l /var/log/jellyfin", allowed: true},
 		{name: "debian readonly journalctl read", profile: "debian-readonly", command: "journalctl -u nginx -n 50", allowed: true},
 		{name: "debian readonly blocks journalctl follow", profile: "debian-readonly", command: "journalctl -f", allowed: false},
 		{name: "debian readonly blocks install", profile: "debian-readonly", command: "apt install nginx", allowed: false},
 		{name: "debian ops allows restart", profile: "debian-ops", command: "systemctl restart nginx", allowed: true},
+		{name: "debian ops allows ls", profile: "debian-ops", command: "ls -l /var/log/jellyfin", allowed: true},
 		{name: "debian ops allows journalctl read", profile: "debian-ops", command: "journalctl -u nginx -n 100", allowed: true},
 		{name: "ubuntu readonly allows snap list", profile: "ubuntu-readonly", command: "snap list", allowed: true},
 		{name: "ubuntu ops allows snap restart", profile: "ubuntu-ops", command: "snap restart lxd", allowed: true},
