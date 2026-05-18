@@ -51,7 +51,7 @@
     "^lspci(\\s|$)",
     "^dmidecode(\\s|$)",
     "^systemctl\\s+(status|list-units|list-services)",
-    "^journalctl\\s+(-u\\s+\\S+\\s+)?--no-pager",
+    "^journalctl(\\s|$)",
     "^top\\s+-b\\s+-n\\s+1",
     "^vmstat(\\s|$)",
     "^iostat(\\s|$)",
@@ -60,6 +60,7 @@
     "^printenv(\\s|$)"
   ],
   "blacklist_regex": [
+    "^journalctl(\\s+.*)?\\s(-f|--follow|--rotate|--vacuum-(time|size|files)(=\\S+)?|--flush|--relinquish-var|--smart-relinquish-var|--setup-keys)(\\s|$)",
     "rm\\s",
     "rmdir\\s",
     "mkfs",

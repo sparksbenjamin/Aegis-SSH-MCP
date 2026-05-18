@@ -26,7 +26,7 @@
     "^dpkg\\s+(-s|--status)\\s+\\S+(\\s|$)",
     "^systemctl\\s+(status|show|is-active|is-enabled|list-units|list-unit-files)(\\s|$)",
     "^service\\s+\\S+\\s+status(\\s|$)",
-    "^journalctl(\\s+.*)?--no-pager(\\s|$)",
+    "^journalctl(\\s|$)",
     "^hostnamectl\\s+status(\\s|$)",
     "^timedatectl\\s+status(\\s|$)",
     "^lsb_release\\s+-a(\\s|$)",
@@ -40,6 +40,7 @@
     "^whoami(\\s|$)"
   ],
   "blacklist_regex": [
+    "^journalctl(\\s+.*)?\\s(-f|--follow|--rotate|--vacuum-(time|size|files)(=\\S+)?|--flush|--relinquish-var|--smart-relinquish-var|--setup-keys)(\\s|$)",
     ";",
     "&&",
     "\\|\\|",

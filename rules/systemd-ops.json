@@ -7,9 +7,10 @@
   "whitelist_regex": [
     "^systemctl\\s+(status|show|cat|is-active|is-enabled|list-units|list-unit-files)(\\s|$)",
     "^systemctl\\s+(start|stop|restart|reload|try-restart|reload-or-restart|enable|disable)\\s+\\S+(\\s+\\S+)*$",
-    "^journalctl(\\s+.*)?--no-pager(\\s|$)"
+    "^journalctl(\\s|$)"
   ],
   "blacklist_regex": [
+    "^journalctl(\\s+.*)?\\s(-f|--follow|--rotate|--vacuum-(time|size|files)(=\\S+)?|--flush|--relinquish-var|--smart-relinquish-var|--setup-keys)(\\s|$)",
     "^systemctl\\s+(halt|poweroff|reboot|kexec|suspend|hibernate|hybrid-sleep|rescue|emergency|default|isolate|mask|unmask|preset|preset-all|link|switch-root|edit|set-default|set-property|revert|daemon-reexec)(\\s|$)",
     ";",
     "&&",

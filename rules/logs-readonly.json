@@ -16,7 +16,7 @@
     "(^|\\s)-ok(\\s|$)"
   ],
   "whitelist_regex": [
-    "^journalctl(\\s+.*)?--no-pager(\\s|$)",
+    "^journalctl(\\s|$)",
     "^tail\\s+(-n\\s+\\d+\\s+)?/var/log/\\S+$",
     "^head\\s+(-n\\s+\\d+\\s+)?/var/log/\\S+$",
     "^grep\\s+.*\\s+/var/log/\\S+$",
@@ -26,6 +26,7 @@
     "^find\\s+/var/log(/\\S*)?\\s+-maxdepth\\s+\\d+(\\s+.*)?$"
   ],
   "blacklist_regex": [
+    "^journalctl(\\s+.*)?\\s(-f|--follow|--rotate|--vacuum-(time|size|files)(=\\S+)?|--flush|--relinquish-var|--smart-relinquish-var|--setup-keys)(\\s|$)",
     ";",
     "&&",
     "\\|\\|",
