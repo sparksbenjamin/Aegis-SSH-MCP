@@ -12,10 +12,11 @@ Core flow:
 1. Receive an MCP tool call.
 2. Map that tool call to a configured host alias.
 3. Parse the command into executable plus arguments.
-4. Validate the parsed command against a rule profile.
-5. Rebuild the argv into a shell-safe normalized command string.
-6. Execute that normalized command over a single SSH session only if validation passed.
-7. Return output and write an audit record.
+4. Reject shell control features like pipes, redirects, chaining, and command substitution.
+5. Validate the parsed command against a rule profile.
+6. Rebuild the argv into a shell-safe normalized command string.
+7. Execute that normalized command over a single SSH session only if validation passed.
+8. Return output and write an audit record.
 
 ## Current Architecture
 
@@ -208,6 +209,7 @@ When TLS is disabled, the server logs a warning at startup.
 Responsibilities:
 
 - parse shell-style quoting into argv using `github.com/google/shlex`
+- reject unquoted shell control features such as pipes, redirects, chaining, and command substitution
 - reject control characters
 - preserve executable, arguments, and normalized full-command views
 - rebuild a shell-safe normalized command string

@@ -179,7 +179,7 @@ func (a *AegisServer) registerHostTool(cfg *config.HostConfig) {
 			"command",
 			mcp.Required(),
 			mcp.Description(
-				"The command to execute on the remote host. Aegis parses it into argv, validates the executable and arguments, then executes a normalized shell-safe form. Shell chaining and expansion features are intentionally blocked or neutralized.",
+				"The command to execute on the remote host. Aegis parses it into argv, validates the executable and arguments, then executes a normalized shell-safe form. Use a single command only: pipes, redirects, chaining, and command substitution are intentionally blocked.",
 			),
 		),
 	)

@@ -1,6 +1,9 @@
 package command
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestParseBuildsNormalizedShellSafeCommand(t *testing.T) {
 	t.Parallel()
@@ -21,16 +24,15 @@ func TestParseBuildsNormalizedShellSafeCommand(t *testing.T) {
 	}
 }
 
-func TestParseNeutralizesShellOperators(t *testing.T) {
+func TestParseRejectsShellPipelines(t *testing.T) {
 	t.Parallel()
 
-	parsed, err := Parse(`echo hello; rm -rf /`)
-	if err != nil {
-		t.Fatalf("parse command: %v", err)
+	_, err := Parse(`systemctl list-units --type=service --state=running | grep -iE 'jellyfin'`)
+	if err == nil {
+		t.Fatal("expected pipe operator parse to fail")
 	}
-
-	if got, want := parsed.Normalized, `echo 'hello;' rm -rf /`; got != want {
-		t.Fatalf("unexpected normalized command: got %q want %q", got, want)
+	if !strings.Contains(err.Error(), `shell control operator "|" is not allowed`) {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -47,5 +49,18 @@ func TestParseRejectsEmptyExecutable(t *testing.T) {
 
 	if _, err := Parse(`"" test`); err == nil {
 		t.Fatal("expected empty executable parse to fail")
+	}
+}
+
+func TestParseAllowsPipeCharacterInsideQuotedArgument(t *testing.T) {
+	t.Parallel()
+
+	parsed, err := Parse(`grep -iE 'media|server|streaming' /var/log/app.log`)
+	if err != nil {
+		t.Fatalf("parse command: %v", err)
+	}
+
+	if got, want := parsed.Normalized, `grep -iE 'media|server|streaming' /var/log/app.log`; got != want {
+		t.Fatalf("unexpected normalized command: got %q want %q", got, want)
 	}
 }

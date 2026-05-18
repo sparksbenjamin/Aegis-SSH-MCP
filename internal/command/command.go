@@ -30,6 +30,9 @@ func Parse(raw string) (*Parsed, error) {
 	if raw == "" {
 		return nil, fmt.Errorf("command must not be empty")
 	}
+	if err := validateRawShellSyntax(raw); err != nil {
+		return nil, err
+	}
 
 	tokens, err := shlex.Split(raw)
 	if err != nil {
@@ -74,6 +77,50 @@ func validateToken(token string) error {
 			return fmt.Errorf("control characters are not allowed in commands")
 		}
 	}
+	return nil
+}
+
+func validateRawShellSyntax(raw string) error {
+	inSingle := false
+	inDouble := false
+	escaped := false
+
+	for i := 0; i < len(raw); i++ {
+		ch := raw[i]
+
+		if escaped {
+			escaped = false
+			continue
+		}
+		if ch == '\\' && !inSingle {
+			escaped = true
+			continue
+		}
+		if ch == '\'' && !inDouble {
+			inSingle = !inSingle
+			continue
+		}
+		if ch == '"' && !inSingle {
+			inDouble = !inDouble
+			continue
+		}
+		if inSingle || inDouble {
+			continue
+		}
+
+		switch ch {
+		case '|', ';', '&', '>', '<', '`':
+			return fmt.Errorf(
+				"shell control operator %q is not allowed - use a single command without pipes, redirects, or chaining",
+				string(ch),
+			)
+		case '$':
+			if i+1 < len(raw) && raw[i+1] == '(' {
+				return fmt.Errorf("shell command substitution $(...) is not allowed")
+			}
+		}
+	}
+
 	return nil
 }
 
