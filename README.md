@@ -9,6 +9,8 @@
 
 A thin MCP-native SSH bridge for AI agents.
 
+Aegis lets AI agents run approved commands on Linux hosts over SSH without giving them unrestricted shell access.
+
 Aegis exposes host-scoped MCP tools backed by SSH, with rule-based validation, ephemeral per-request execution, and audit logging. It is designed to work with existing Linux permissions, sudo policy, and host security rather than replace them.
 
 Quick links:
