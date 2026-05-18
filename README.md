@@ -120,6 +120,11 @@ It gives MCP clients a controlled way to reach real hosts without turning Aegis 
 
 ## How it works
 
+For each allowed request, Aegis parses the command, validates it against the assigned rule profile, opens a new non-interactive SSH session, runs the command, returns the output, and disconnects immediately.
+
+<details>
+<summary>Architecture view</summary>
+
 ```text
 +-------------------+
 | MCP Client / LLM  |
@@ -151,7 +156,7 @@ It gives MCP clients a controlled way to reach real hosts without turning Aegis 
 +-------------------+
 ```
 
-For each allowed request, Aegis parses the command, validates it against the assigned rule profile, opens a new non-interactive SSH session, runs the command, returns the output, and disconnects immediately.
+</details>
 
 ## Configuration
 
@@ -297,6 +302,8 @@ Operators still own:
 
 The README stays focused on deployment and first-use. The deeper docs below are still in the repo, but their core purpose is summarized here first.
 
+Authoring rule for this README: [docs/readme-authoring.md](docs/readme-authoring.md)
+
 <details>
 <summary>Config guide</summary>
 
@@ -363,6 +370,9 @@ Use the tech spec when you want the deeper implementation model, transport detai
 
 Aegis is early-stage but operational.
 
+<details>
+<summary>Current capabilities</summary>
+
 Current capabilities include:
 
 - MCP over HTTP/SSE
@@ -374,6 +384,8 @@ Current capabilities include:
 - password authentication
 - host fingerprint pinning
 - ephemeral per-request SSH execution
+
+</details>
 
 ## Support
 
