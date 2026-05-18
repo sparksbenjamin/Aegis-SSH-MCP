@@ -10,3 +10,5 @@ keys/*
 !keys/.gitkeep
 certs/*
 !certs/.gitkeep
+
+docs/readme-guidelines-audit.md

@@ -1,98 +1,124 @@
 # Aegis-SSH-MCP
 
-<p align="center">
-  <strong>A thin MCP-native SSH bridge for AI agents.</strong><br/>
-  Controlled, host-scoped SSH execution with ephemeral sessions, rule validation, and audit logging.
-</p>
+![Go 1.23](https://img.shields.io/badge/Go-1.23-00ADD8?style=flat-square&logo=go)
+![MCP compatible](https://img.shields.io/badge/MCP-Compatible-blue?style=flat-square)
+![Docker supported](https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker)
+![Docker publish workflow status](https://img.shields.io/github/actions/workflow/status/sparksbenjamin/Aegis-SSH-MCP/docker-publish.yml?style=flat-square)
+![MIT license](https://img.shields.io/github/license/sparksbenjamin/Aegis-SSH-MCP?style=flat-square)
+![Go module version](https://img.shields.io/github/go-mod/go-version/sparksbenjamin/Aegis-SSH-MCP?style=flat-square)
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Go-1.23-00ADD8?style=flat-square&logo=go" />
-  <img src="https://img.shields.io/badge/MCP-Compatible-blue?style=flat-square" />
-  <img src="https://img.shields.io/badge/Docker-Supported-2496ED?style=flat-square&logo=docker" />
-  <img src="https://img.shields.io/github/actions/workflow/status/sparksbenjamin/Aegis-SSH-MCP/docker-publish.yml?style=flat-square" />
-  <img src="https://img.shields.io/github/license/sparksbenjamin/Aegis-SSH-MCP?style=flat-square" />
-  <img src="https://img.shields.io/github/go-mod/go-version/sparksbenjamin/Aegis-SSH-MCP?style=flat-square" />
-</p>
+A thin MCP-native SSH bridge for AI agents.
 
----
-<img width="938" height="360" alt="image" src="https://github.com/user-attachments/assets/6af3ab55-ca74-4a38-9ffa-799ce545a9f4" />
-****<img width="954" height="979" alt="image" src="https://github.com/user-attachments/assets/034e35ff-b53b-4619-9c32-c9bc8cd20704" />
+Aegis exposes host-scoped MCP tools backed by SSH, with rule-based validation, ephemeral per-request execution, and audit logging. It is designed to work with existing Linux permissions, sudo policy, and host security rather than replace them.
 
+Quick links:
 
-# What Is Aegis-SSH-MCP?
+- [Quick start](#quick-start)
+- [How it works](#how-it-works)
+- [Configuration](#configuration)
+- [Connect a client](#connect-a-client)
+- [Security model](#security-model)
+- [Docs](#docs)
+- [Support](#support)
 
-Aegis-SSH-MCP is a lightweight MCP (Model Context Protocol) server that enables AI agents and MCP-compatible clients to execute controlled SSH commands against predefined infrastructure targets.
+## Quick start
 
-It is intentionally designed as a **thin operational bridge** between MCP clients and standard SSH infrastructure.
+The checked-in [docker-compose.yml](docker-compose.yml) is the recommended deployment path. It runs Aegis over SSE on `http://localhost:8443` by default and ships with starter rule profiles in [`rules/`](rules/).
 
-Rather than replacing Linux security, SSH permissions, or existing infrastructure controls, Aegis operates *within* the trust boundaries that already exist on the target machine.
+1. Create or populate these folders next to `docker-compose.yml`:
 
-Aegis focuses on:
+```text
+./configs
+./rules
+./keys
+./certs   # only if you want HTTPS
+```
 
-- Host-scoped command execution
-- Rule-constrained operations
-- Ephemeral SSH execution
-- Audit visibility
-- Operational simplicity
-- Infrastructure predictability
+2. Put an SSH private key in `keys/` and keep its permissions strict.
 
----
+3. Add a host config in `configs/docker.json`:
 
-# Why Aegis Exists
+```json
+{
+  "alias": "docker",
+  "host_ip": "192.168.1.10",
+  "ssh_port": 22,
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/docker_ed25519",
+  "rule_profile": "docker-readonly",
+  "timeout_seconds": 30,
+  "host_key_fingerprint": "SHA256:replace-this-with-your-real-host-key",
+  "api_keys": [
+    "change-me-docker-key"
+  ]
+}
+```
 
-AI systems are becoming increasingly capable of assisting with:
+4. Start the service:
 
-- infrastructure diagnostics
-- container troubleshooting
-- deployment validation
-- operational maintenance
-- observability workflows
-- service management
-- internal automation
+```bash
+docker compose pull
+docker compose up -d
+docker compose logs -f aegis-ssh-mcp
+```
 
-Most infrastructure-facing AI tooling today tends toward one of two extremes:
+5. Connect your MCP client to:
 
-## Unsafe Raw Shell Access
+```text
+http://localhost:8443/mcp/docker/sse
+Authorization: Bearer change-me-docker-key
+```
 
-Giving AI agents unrestricted shell execution with little isolation or operational control.
+If you want HTTPS, uncomment the TLS lines in [docker-compose.yml](docker-compose.yml) and set `AEGIS_SSE_BASE_URL` to your real external address.
 
-## Overengineered Infrastructure Platforms
+<details>
+<summary>Build from source</summary>
 
-Replacing existing SSH/Linux controls with entirely new orchestration layers, security models, and abstractions.
+```bash
+git clone https://github.com/sparksbenjamin/Aegis-SSH-MCP.git
+cd Aegis-SSH-MCP
+go build -o aegis-ssh-mcp .
+```
 
-Aegis takes a different approach:
+</details>
 
-> Keep SSH authoritative.  
-> Keep Linux authoritative.  
+## Why it exists
+
+Most AI infrastructure tooling tends toward one of two extremes:
+
+- raw shell access with very little control
+- a heavy replacement platform for existing SSH and Linux workflows
+
+Aegis is the middle path:
+
+> Keep SSH authoritative.
+> Keep Linux authoritative.
 > Keep infrastructure ownership where it already belongs.
 
-Aegis simply exposes controlled SSH execution through MCP.
+It gives MCP clients a controlled way to reach real hosts without turning Aegis into a replacement for your existing security model.
 
----
+## What it does
 
-# Core Philosophy
+- Creates one host-scoped MCP endpoint per host config
+- Exposes one host-scoped SSH tool plus `aegis_status` for that endpoint
+- Validates commands against rule profiles before SSH is attempted
+- Opens a fresh SSH session for every request
+- Supports both `sse` and `stdio` transport
+- Logs command attempts for audit visibility
+- Supports host key pinning, bearer tokens, and optional output redaction
+- Hot-reloads config and rule changes from disk
 
-Aegis is intentionally designed around several principles:
+## What it does not do
 
-- SSH remains the trust boundary
-- Linux permissions remain authoritative
-- Existing sudo policies remain authoritative
-- Existing logging/audit systems remain authoritative
-- Infrastructure operators remain in control
-- AI access should be explicit and constrained
-- Execution should remain isolated and predictable
+- Replace SSH, Linux permissions, or sudo policy
+- Provide OS-level sandboxing or full IAM-style RBAC
+- Keep persistent remote shells, PTYs, or hidden session state
+- Support SSH agent forwarding or `~/.ssh/config`
+- Pause commands for human approval
+- Act as a full autonomous infrastructure platform
 
-This creates a system that is:
-
-- operationally transparent
-- easier to reason about
-- easier to audit
-- easier to deploy
-- harder to misuse accidentally
-
----
-
-# Architecture
+## How it works
 
 ```text
 +-------------------+
@@ -125,377 +151,93 @@ This creates a system that is:
 +-------------------+
 ```
 
----
+For each allowed request, Aegis parses the command, validates it against the assigned rule profile, opens a new non-interactive SSH session, runs the command, returns the output, and disconnects immediately.
 
-# Key Features
+## Configuration
 
-## Host-Scoped MCP Tools
+### Host configs
 
-Each configured host becomes its own MCP tool.
+One JSON file in [`configs/`](configs/) equals one remote host.
 
-Example:
+- One host config = one MCP endpoint
+- One host config = one host-scoped SSH tool
+- One host config = one assigned rule profile
+- One host config = one bearer-token boundary for SSE
 
-```text
-aegis_ssh_docker
-aegis_ssh_proxmox
-aegis_ssh_staging
-```
+Use simple aliases such as `web-01` or `docker`. The alias becomes part of the endpoint path and tool name.
 
-Each host-scoped endpoint also exposes:
+<details>
+<summary>Optional host fields</summary>
 
-```text
-aegis_status
-```
+- `stealth_mode`: returns a fake normal-looking response for blocked commands
+- `fake_response`: custom fake response when `stealth_mode` is on
+- `redaction_enabled`: applies regex-based output masking before results are returned
+- `redaction_patterns`: regex list used for output redaction
+- `host_key_fingerprint`: strongly recommended host key pinning
 
-This creates explicit infrastructure boundaries and avoids unrestricted generic execution surfaces.
+</details>
 
----
+### Rule profiles
 
-## Rule-Based Command Validation
-
-Commands can be validated against configurable allow/deny rules before execution.
-
-This enables restriction of:
-
-- destructive commands
-- shell chaining
-- unsupported utilities
-- risky patterns
-- unexpected workflows
-
-without replacing native Linux permissions.
-
-Detailed configuration examples are available in:
-
-- [`docs/rules.md`](docs/rules.md)
-
-Bundled examples now include Docker, Kubernetes, Proxmox VE, and distro-oriented Debian, Ubuntu, and RHEL read-only and ops profiles.
-
----
-
-## Ephemeral Execution Model
-
-Aegis intentionally avoids persistent SSH sessions.
-
-Each MCP request:
-
-1. validates the command
-2. establishes a fresh SSH connection
-3. executes the command
-4. captures output
-5. disconnects immediately
-
-This design intentionally avoids:
-
-- persistent shell state
-- terminal multiplexing abuse
-- long-lived agent sessions
-- hidden remote execution contexts
-- interactive session hijacking
-- cross-request shell persistence
-
-The tradeoff is slightly higher execution latency in exchange for improved isolation and operational predictability.
-
-This behavior is intentional and considered a core security property of the project.
-
----
-
-## Standard SSH Authentication
-
-Supports:
-
-- SSH key authentication
-- password authentication
-
-Optional:
-
-- SSH host fingerprint pinning
-
-Aegis does not replace existing infrastructure authentication models.
-
-Configuration examples are available in:
-
-- [`docs/config.md`](docs/config.md)
-
----
-
-## Audit Logging
-
-Aegis logs execution activity for operational visibility and troubleshooting.
-
-Combined with existing infrastructure tooling such as:
-
-- journald
-- auditd
-- SSH logs
-- sudo logs
-
-this provides layered observability without replacing existing host auditing systems.
-
----
-
-## Multi-Host Infrastructure Support
-
-Manage multiple infrastructure targets from a single MCP server instance.
-
-Each host remains isolated through:
-
-- dedicated configuration
-- dedicated MCP tool naming
-- independent SSH credentials
-- per-host bearer tokens for SSE access
-
----
-
-## Lightweight Deployment
-
-Aegis is designed for lightweight deployment as:
-
-- a single Go binary
-- a Docker container
-- an internal operational service
-
-No external database or orchestration layer is required.
-
----
-
-# What Aegis Does NOT Do
-
-Aegis intentionally avoids becoming:
-
-- a replacement for SSH
-- a Linux RBAC system
-- a persistent shell runtime
-- a terminal multiplexer
-- a Kubernetes-style orchestrator
-- a PAM replacement
-- an autonomous infrastructure agent
-- a hidden background execution layer
-
-Aegis does NOT:
-
-- bypass Linux permissions
-- override sudo policies
-- replace audit systems
-- maintain persistent SSH sessions
-- support SSH agent forwarding
-- parse `~/.ssh/config`
-- provide OS-level sandboxing
-- maintain hidden remote shell state
-- provide unrestricted interactive terminal access
-
-These constraints are intentional.
-
-The goal is operational transparency and predictable infrastructure behavior.
-
----
-
-# Current Capabilities
-
-| Capability | Status |
-|---|---|
-| MCP over HTTP/SSE | Supported |
-| MCP stdio support | Supported |
-| Docker deployment | Supported |
-| Multi-host configuration | Supported |
-| Concurrent requests | Supported |
-| Rule-based validation | Supported |
-| Audit logging | Supported |
-| SSH key authentication | Supported |
-| Password authentication | Supported |
-| SSH fingerprint pinning | Supported |
-| Ephemeral per-request SSH execution | Supported |
-| Persistent SSH sessions | Intentionally unsupported |
-| Streaming terminal sessions | Intentionally unsupported |
-| SSH agent forwarding | Unsupported |
-| `~/.ssh/config` support | Unsupported |
-| File upload/download tooling | Unsupported |
-
----
-
-# Example Use Cases
-
-## Infrastructure Diagnostics
-
-```text
-"Check disk usage on the Docker host"
-"Show nginx logs from staging"
-"Verify the Proxmox node is reachable"
-```
-
----
-
-## AI-Assisted Operations
-
-```text
-"Restart the failing container"
-"Inspect Docker compose state"
-"Check systemd service health"
-```
-
----
-
-## Controlled Internal Automation
-
-```text
-"Run approved maintenance commands"
-"Collect operational telemetry"
-"Validate infrastructure state"
-```
-
----
-
-# Documentation
-
-Detailed operational documentation is available in the `/docs` directory.
-
-| Document | Purpose |
-|---|---|
-| [`docs/config.md`](docs/config.md) | Host configuration, authentication, bearer tokens, deployment options, and runtime configuration |
-| [`docs/rules.md`](docs/rules.md) | Rule validation, command restrictions, and execution control behavior |
-| [`docs/FAQ.md`](docs/FAQ.md) | Design philosophy, security boundaries, operational behavior, and common questions |
-
-These documents intentionally go deeper into operational behavior and infrastructure constraints than the README alone.
-
----
-
-# Installation
-
-## Docker Compose (Recommended)
-
-The checked-in [docker-compose.yml](docker-compose.yml) is the recommended deployment path.
-It pulls the published GHCR image and mounts local `configs/`, `rules/`, and `keys/` directories into the container.
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose logs -f aegis-ssh-mcp
-```
-
-By default, the checked-in Compose example serves local HTTP SSE on:
-
-```text
-http://localhost:8443
-```
-
-If you want HTTPS, uncomment the TLS lines in [docker-compose.yml](docker-compose.yml) and set `AEGIS_SSE_BASE_URL` to your real external address.
-
-Minimal host folder layout:
-
-```text
-./configs
-./rules
-./keys
-./certs   (only if you want HTTPS)
-```
-
-Additional deployment notes are available in:
-
-- [`docs/config.md`](docs/config.md)
-
----
-
-## Build From Source
-
-```bash
-git clone https://github.com/sparksbenjamin/Aegis-SSH-MCP.git
-
-cd Aegis-SSH-MCP
-
-go build -o aegis-ssh-mcp .
-```
-
----
-
-# Example Configuration
-
-Hosts are configured through JSON configuration files.
-
-Example:
+Each host config points to one rule profile with:
 
 ```json
-{
-  "alias": "docker",
-  "host_ip": "192.168.1.10",
-  "ssh_port": 22,
-  "ssh_user": "ops",
-  "auth_method": "key",
-  "key_path": "/keys/docker_ed25519",
-  "rule_profile": "docker-readonly",
-  "timeout_seconds": 30,
-  "host_key_fingerprint": "SHA256:replace-this-with-your-real-host-key",
-  "api_keys": [
-    "change-me-docker-key"
-  ]
-}
+"rule_profile": "docker-readonly"
 ```
 
-Configured hosts automatically become MCP tools:
+Rule profiles live in [`rules/`](rules/) and decide which command shapes are allowed or blocked before SSH is attempted.
+
+<details>
+<summary>Shipped starter profiles</summary>
+
+- `readonly-safe`
+- `debian-readonly`
+- `debian-ops`
+- `ubuntu-readonly`
+- `ubuntu-ops`
+- `rhel-readonly`
+- `rhel-ops`
+- `proxmox-readonly`
+- `proxmox-ops`
+- `docker-readonly`
+- `docker-ops`
+- `systemd-ops`
+- `kubernetes-readonly`
+- `network-diagnostics`
+- `logs-readonly`
+- `package-readonly`
+
+</details>
+
+<details>
+<summary>Rule validation model</summary>
+
+Aegis validates commands in this order:
+
+1. Parse the command into executable plus arguments
+2. Reject shell control features such as redirects, chaining, and command substitution
+3. Allow only a limited set of safe pipeline filters
+4. Apply executable, argument, and full-command blacklist checks
+5. Apply executable, argument, and full-command whitelist checks
+6. Attempt SSH only if all checks pass
+
+</details>
+
+## Connect a client
+
+Each host config becomes its own host-scoped SSE endpoint:
 
 ```text
-aegis_ssh_docker
+http://YOUR_AEGIS_HOST:8443/mcp/<alias>/sse
 ```
 
-The endpoint also exposes:
+Clients must send the configured bearer token:
 
 ```text
-aegis_status
+Authorization: Bearer YOUR_TOKEN
 ```
 
-And for SSE deployments, that same config becomes:
-
-```text
-Endpoint: /mcp/docker/sse
-Header: Authorization: Bearer change-me-docker-key
-```
-
-Additional configuration examples are available in:
-
-- [`docs/config.md`](docs/config.md)
-
----
-
-# Connect an MCP Client
-
-Once Aegis is running and a host config is loaded, each host becomes its own MCP SSE endpoint.
-
-For this config:
-
-```json
-{
-  "alias": "docker",
-  "api_keys": [
-    "change-me-docker-key"
-  ]
-}
-```
-
-connect to:
-
-```text
-http://YOUR_AEGIS_HOST:8443/mcp/docker/sse
-```
-
-or, if TLS is enabled:
-
-```text
-https://YOUR_AEGIS_HOST:8443/mcp/docker/sse
-```
-
-Every request must include:
-
-```text
-Authorization: Bearer change-me-docker-key
-```
-
-If you want an agent to access two different hosts, add Aegis twice in the client using:
-
-- one endpoint URL per host alias
-- one bearer token per host
-
-## Quick Connection Check
-
-You can confirm the SSE endpoint is reachable with:
+Quick reachability check:
 
 ```bash
 curl -i -N \
@@ -503,9 +245,12 @@ curl -i -N \
   http://YOUR_AEGIS_HOST:8443/mcp/docker/sse
 ```
 
-If auth is correct, Aegis should return `200 OK` and keep the SSE stream open.
+If the token is valid, Aegis should return `200 OK` and keep the SSE stream open.
 
-## LibreChat Example
+If one agent needs access to two different hosts, add Aegis twice in the client with one endpoint URL and one bearer token per host alias.
+
+<details>
+<summary>LibreChat example</summary>
 
 ```yaml
 mcpSettings:
@@ -522,23 +267,13 @@ mcpServers:
     initTimeout: 30000
 ```
 
-The important parts are:
+</details>
 
-- `type: sse`
-- the host-scoped URL ending in `/mcp/<alias>/sse`
-- the `Authorization: Bearer ...` header
+## Security model
 
-More connection details are available in:
+Aegis is a controlled SSH execution bridge, not a full security platform.
 
-- [`docs/config.md`](docs/config.md)
-
----
-
-# Security Model
-
-Aegis is designed around inherited infrastructure security.
-
-Security boundaries are enforced primarily through:
+Security boundaries come from the combination of:
 
 - SSH authentication
 - Linux user permissions
@@ -549,100 +284,114 @@ Security boundaries are enforced primarily through:
 - audit logging
 - ephemeral execution isolation
 
-Aegis should be treated as:
-
-> a controlled SSH execution bridge
-
-not as a complete infrastructure security platform.
-
-Operators remain responsible for:
+Operators still own:
 
 - credential management
 - host hardening
-- sudo policy
+- least-privilege remote accounts
 - network security
 - audit retention
 - infrastructure segmentation
 
----
+## Docs
 
-# Recommended Deployment Scenarios
+The README stays focused on deployment and first-use. The deeper docs below are still in the repo, but their core purpose is summarized here first.
 
-Aegis works best in:
+<details>
+<summary>Config guide</summary>
 
-- homelabs
-- internal infrastructure
-- trusted operational environments
-- AI-assisted DevOps workflows
-- diagnostics environments
-- lightweight infrastructure automation
+Full guide: [docs/config.md](docs/config.md)
 
----
+Highlights:
 
-# Project Goals
+- one config file equals one host
+- config changes are hot-reloaded
+- aliases become endpoint paths and tool names
+- `api_keys` are optional for `stdio` and effectively required for `sse`
+- key paths must be container-visible paths such as `/keys/my-server.pem`
 
-The goal of Aegis is not maximum abstraction.
+</details>
 
-The goal is:
+<details>
+<summary>Rule guide</summary>
 
-- operational simplicity
-- explicit infrastructure boundaries
-- MCP-native compatibility
-- isolated execution
-- minimal hidden behavior
-- predictable SSH semantics
-- infrastructure transparency
+Full guide: [docs/rules.md](docs/rules.md)
 
----
+Highlights:
 
-# Development Status
+- use a tight executable whitelist first
+- constrain arguments and full command shapes second
+- layer blacklists on top for shell escape paths
+- starter profiles for Docker, Debian, Ubuntu, RHEL, Proxmox, Kubernetes, logs, and diagnostics are already included
 
-Aegis is actively evolving and should currently be considered:
+</details>
 
-> early-stage but operational
+<details>
+<summary>FAQ</summary>
 
-The project already supports:
+Full guide: [docs/FAQ.md](docs/FAQ.md)
 
-- live SSH execution
-- Docker deployment
-- MCP over SSE
-- multi-host operation
-- rule validation
+Highlights:
+
+- no persistent SSH shell is handed to the agent
+- Aegis reduces abuse risk, but it is not a remote sandbox
+- audit logs are structured and useful for investigation
+- output redaction helps, but it is not full data-loss prevention
+
+</details>
+
+<details>
+<summary>Technical spec</summary>
+
+Full spec: [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
+
+Use the tech spec when you want the deeper implementation model, transport details, and runtime behavior.
+
+</details>
+
+## Screenshots
+
+<details>
+<summary>Open screenshots</summary>
+
+![Aegis project screenshot showing the README hero presentation and key project messaging](https://github.com/user-attachments/assets/6af3ab55-ca74-4a38-9ffa-799ce545a9f4)
+![Aegis project screenshot showing a longer walkthrough of project details and configuration content](https://github.com/user-attachments/assets/034e35ff-b53b-4619-9c32-c9bc8cd20704)
+
+</details>
+
+## Status
+
+Aegis is early-stage but operational.
+
+Current capabilities include:
+
+- MCP over HTTP/SSE
+- MCP over stdio
+- multi-host configuration
+- rule-based validation
 - audit logging
-- isolated ephemeral execution
+- SSH key authentication
+- password authentication
+- host fingerprint pinning
+- ephemeral per-request SSH execution
 
-Additional capabilities will evolve over time as the MCP ecosystem matures.
+## Support
 
----
+For bugs, setup questions, or operational feedback, open an issue in this repository.
 
-# Contributing
+Primary maintainer: [@sparksbenjamin](https://github.com/sparksbenjamin)
 
-Contributions, issues, and operational feedback are welcome.
-
-Areas of interest include:
+Contributions are welcome, especially around:
 
 - MCP client interoperability
-- improved rule validation
-- enhanced observability
+- rule validation improvements
+- observability
 - deployment hardening
-- additional transport support
-- operational tooling
+- transport support
 - testing and validation
 
----
+Until a dedicated contributing guide lands, opening an issue before a large change is the best way to align on direction.
 
-# License
+## License
 
 MIT License
-
----
-
-# Final Philosophy
-
-Aegis intentionally stays close to existing infrastructure primitives.
-
-It does not attempt to replace SSH.
-
-It does not attempt to replace Linux security.
-
-It simply makes SSH infrastructure accessible to MCP-compatible AI systems in a more controlled, observable, isolated, and operationally predictable way.
