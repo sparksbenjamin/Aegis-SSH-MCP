@@ -1,0 +1,41 @@
+{
+  "profile_name": "network-diagnostics",
+  "executable_whitelist_regex": [
+    "^ip$",
+    "^ss$",
+    "^netstat$",
+    "^ping$",
+    "^ping6$",
+    "^traceroute$",
+    "^tracepath$",
+    "^dig$",
+    "^nslookup$",
+    "^host$",
+    "^ethtool$",
+    "^arp$"
+  ],
+  "whitelist_regex": [
+    "^ip\\s+(addr(\\s+show)?|route(\\s+(show|get))?|link(\\s+show)?|neigh(\\s+show)?)(\\s+.*)?$",
+    "^ss(\\s|$)",
+    "^netstat(\\s|$)",
+    "^ping6?(\\s|$)",
+    "^traceroute(\\s|$)",
+    "^tracepath(\\s|$)",
+    "^dig(\\s|$)",
+    "^nslookup(\\s|$)",
+    "^host\\s+\\S+(\\s+.*)?$",
+    "^ethtool\\s+((-i|-k|-S|-g|-c)\\s+)?\\S+(\\s|$)",
+    "^arp(\\s|$)"
+  ],
+  "blacklist_regex": [
+    "^ip\\s+(addr|route|link|neigh)\\s+(add|del|delete|replace|flush|set)(\\s|$)",
+    "^arp\\s+-(s|d)(\\s|$)",
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh|zsh|fish|ksh)",
+    ">",
+    "`",
+    "\\$\\("
+  ]
+}

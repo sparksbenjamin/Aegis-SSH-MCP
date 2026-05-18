@@ -1,0 +1,24 @@
+{
+  "profile_name": "systemd-ops",
+  "executable_whitelist_regex": [
+    "^systemctl$",
+    "^journalctl$"
+  ],
+  "whitelist_regex": [
+    "^systemctl\\s+(status|show|cat|is-active|is-enabled|list-units|list-unit-files)(\\s|$)",
+    "^systemctl\\s+(start|stop|restart|reload|try-restart|reload-or-restart|enable|disable)\\s+\\S+(\\s+\\S+)*$",
+    "^journalctl(\\s+.*)?--no-pager(\\s|$)"
+  ],
+  "blacklist_regex": [
+    "^systemctl\\s+(halt|poweroff|reboot|kexec|suspend|hibernate|hybrid-sleep|rescue|emergency|default|isolate|mask|unmask|preset|preset-all|link|switch-root|edit|set-default|set-property|revert|daemon-reexec)(\\s|$)",
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh|zsh|fish|ksh)",
+    ">",
+    "`",
+    "\\$\\(",
+    "sudo\\s",
+    "su\\s"
+  ]
+}

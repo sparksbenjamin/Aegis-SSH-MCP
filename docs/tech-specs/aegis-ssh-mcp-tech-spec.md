@@ -131,9 +131,14 @@ That last point matters: config changes apply to existing SSE sessions without r
 |-- keys/
 |   `-- .gitkeep
 |-- rules/
+|   |-- kubernetes-readonly.json
+|   |-- logs-readonly.json
+|   |-- network-diagnostics.json
+|   |-- package-readonly.json
 |   |-- docker-ops.json
 |   |-- docker-readonly.json
-|   `-- readonly-safe.json
+|   |-- readonly-safe.json
+|   `-- systemd-ops.json
 |-- .dockerignore
 |-- .gitignore
 |-- Dockerfile

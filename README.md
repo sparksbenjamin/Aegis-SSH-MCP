@@ -202,6 +202,11 @@ Included examples:
 - `readonly-safe`
 - `docker-readonly`
 - `docker-ops`
+- `systemd-ops`
+- `kubernetes-readonly`
+- `network-diagnostics`
+- `logs-readonly`
+- `package-readonly`
 
 Full rule authoring guide:
 

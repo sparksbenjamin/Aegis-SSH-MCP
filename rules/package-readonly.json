@@ -1,0 +1,39 @@
+{
+  "profile_name": "package-readonly",
+  "executable_whitelist_regex": [
+    "^apt$",
+    "^apt-cache$",
+    "^dpkg$",
+    "^rpm$",
+    "^yum$",
+    "^dnf$",
+    "^apk$",
+    "^zypper$",
+    "^pacman$"
+  ],
+  "arguments_blacklist_regex": [
+    "(^|\\s)(install|remove|purge|upgrade|update|dist-upgrade|full-upgrade|autoremove|autoclean|clean|download|reinstall|downgrade|erase|addrepo|refresh|dup)(\\s|$)"
+  ],
+  "whitelist_regex": [
+    "^apt\\s+(list\\s+--installed|list\\s+--upgradable|show\\s+\\S+)(\\s|$)",
+    "^apt-cache\\s+(policy|show|search|madison)(\\s+.*)?$",
+    "^dpkg\\s+(-l|--list)(\\s|$)",
+    "^dpkg\\s+(-s|--status)\\s+\\S+(\\s|$)",
+    "^rpm\\s+(-qa)(\\s|$)",
+    "^rpm\\s+(-qi|-qf)\\s+\\S+(\\s|$)",
+    "^yum\\s+(list\\s+installed|info\\s+\\S+|repolist)(\\s|$)",
+    "^dnf\\s+(list\\s+installed|info\\s+\\S+|repolist)(\\s|$)",
+    "^apk\\s+(info|policy)(\\s+.*)?$",
+    "^zypper\\s+(search|info|repos)(\\s+.*)?$",
+    "^pacman\\s+(-Q|-Qi\\s+\\S+|-Ql\\s+\\S+)(\\s|$)"
+  ],
+  "blacklist_regex": [
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh|zsh|fish|ksh)",
+    ">",
+    "`",
+    "\\$\\("
+  ]
+}

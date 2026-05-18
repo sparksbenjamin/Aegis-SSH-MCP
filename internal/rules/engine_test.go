@@ -3,6 +3,7 @@ package rules
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"aegis-ssh-mcp/internal/command"
@@ -118,5 +119,29 @@ func TestValidateSupportsExecutableAndArgumentRules(t *testing.T) {
 	}
 	if result := engine.Validate("docker-readonly", blockedArg); result.Passed {
 		t.Fatal("expected arguments blacklist to block --privileged")
+	}
+}
+
+func TestBundledProfilesLoadFromRepoRulesDir(t *testing.T) {
+	t.Parallel()
+
+	engine, err := NewEngine(filepath.Join("..", "..", "rules"))
+	if err != nil {
+		t.Fatalf("load bundled profiles: %v", err)
+	}
+
+	want := []string{
+		"docker-ops",
+		"docker-readonly",
+		"kubernetes-readonly",
+		"logs-readonly",
+		"network-diagnostics",
+		"package-readonly",
+		"readonly-safe",
+		"systemd-ops",
+	}
+
+	if got := engine.ProfileNames(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("unexpected bundled profiles: got %v want %v", got, want)
 	}
 }

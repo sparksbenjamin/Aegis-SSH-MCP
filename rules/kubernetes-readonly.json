@@ -1,0 +1,25 @@
+{
+  "profile_name": "kubernetes-readonly",
+  "executable_whitelist_regex": [
+    "^kubectl$"
+  ],
+  "whitelist_regex": [
+    "^kubectl\\s+get\\s+(pod|pods|deployment|deployments|service|services|svc|node|nodes|namespace|namespaces|ns|daemonset|daemonsets|ds|statefulset|statefulsets|sts|job|jobs|cronjob|cronjobs|event|events|ingress|ingresses|endpoint|endpoints|replicaset|replicasets|rs)(\\s+.*)?$",
+    "^kubectl\\s+describe\\s+(pod|deployment|service|node|namespace|daemonset|statefulset|job|cronjob|ingress|endpoint|replicaset)(\\s+.*)?$",
+    "^kubectl\\s+logs\\s+\\S+(\\s+.*)?$",
+    "^kubectl\\s+top\\s+(pod|pods|node|nodes)(\\s+.*)?$",
+    "^kubectl\\s+(version|cluster-info|api-resources|api-versions)(\\s|$)",
+    "^kubectl\\s+config\\s+(current-context|get-contexts)(\\s|$)"
+  ],
+  "blacklist_regex": [
+    "^kubectl\\s+(apply|create|delete|edit|exec|attach|cp|patch|replace|run|scale|set|annotate|label|drain|cordon|uncordon|taint|port-forward|proxy)(\\s|$)",
+    "^kubectl\\s+rollout\\s+(restart|undo)(\\s|$)",
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh|zsh|fish|ksh)",
+    ">",
+    "`",
+    "\\$\\("
+  ]
+}

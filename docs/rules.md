@@ -14,6 +14,19 @@ That profile tells Aegis which commands are allowed, which are blocked, and whic
 
 Rules are stored as JSON files in the `rules/` directory.
 
+## Bundled Profiles
+
+The repo ships with these starter profiles:
+
+- `readonly-safe` for general Linux read-only inspection
+- `docker-readonly` for Docker host and container inspection
+- `docker-ops` for Docker administration on a Docker host
+- `systemd-ops` for service restarts, status checks, and journal access
+- `kubernetes-readonly` for safe `kubectl` inspection and log retrieval
+- `network-diagnostics` for routing, sockets, DNS, and reachability checks
+- `logs-readonly` for `journalctl` and `/var/log` inspection
+- `package-readonly` for installed-package and repo metadata queries
+
 ## How Aegis Applies Rules
 
 Before Aegis runs any SSH command, it does this:
@@ -336,3 +349,5 @@ If a command is blocked:
 - [README.md](../README.md)
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](tech-specs/aegis-ssh-mcp-tech-spec.md)
 - [rules/readonly-safe.json](../rules/readonly-safe.json)
+- [rules/systemd-ops.json](../rules/systemd-ops.json)
+- [rules/kubernetes-readonly.json](../rules/kubernetes-readonly.json)

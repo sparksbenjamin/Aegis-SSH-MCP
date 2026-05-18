@@ -1,0 +1,37 @@
+{
+  "profile_name": "logs-readonly",
+  "executable_whitelist_regex": [
+    "^journalctl$",
+    "^tail$",
+    "^head$",
+    "^grep$",
+    "^zgrep$",
+    "^ls$",
+    "^cat$",
+    "^find$"
+  ],
+  "arguments_blacklist_regex": [
+    "(^|\\s)-exec(\\s|$)",
+    "(^|\\s)-delete(\\s|$)",
+    "(^|\\s)-ok(\\s|$)"
+  ],
+  "whitelist_regex": [
+    "^journalctl(\\s+.*)?--no-pager(\\s|$)",
+    "^tail\\s+(-n\\s+\\d+\\s+)?/var/log/\\S+$",
+    "^head\\s+(-n\\s+\\d+\\s+)?/var/log/\\S+$",
+    "^grep\\s+.*\\s+/var/log/\\S+$",
+    "^zgrep\\s+.*\\s+/var/log/\\S+$",
+    "^ls(\\s+-[A-Za-z]+)*\\s+/var/log(/\\S*)?$",
+    "^cat\\s+/var/log/\\S+$",
+    "^find\\s+/var/log(/\\S*)?\\s+-maxdepth\\s+\\d+(\\s+.*)?$"
+  ],
+  "blacklist_regex": [
+    ";",
+    "&&",
+    "\\|\\|",
+    "\\|\\s*(bash|sh|zsh|fish|ksh)",
+    ">",
+    "`",
+    "\\$\\("
+  ]
+}
