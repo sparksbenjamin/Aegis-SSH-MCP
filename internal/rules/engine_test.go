@@ -131,6 +131,8 @@ func TestBundledProfilesLoadFromRepoRulesDir(t *testing.T) {
 	}
 
 	want := []string{
+		"debian-ops",
+		"debian-readonly",
 		"docker-ops",
 		"docker-readonly",
 		"kubernetes-readonly",
@@ -138,10 +140,56 @@ func TestBundledProfilesLoadFromRepoRulesDir(t *testing.T) {
 		"network-diagnostics",
 		"package-readonly",
 		"readonly-safe",
+		"rhel-ops",
+		"rhel-readonly",
 		"systemd-ops",
+		"ubuntu-ops",
+		"ubuntu-readonly",
 	}
 
 	if got := engine.ProfileNames(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("unexpected bundled profiles: got %v want %v", got, want)
+	}
+}
+
+func TestBundledDistroProfilesRepresentativeCommands(t *testing.T) {
+	t.Parallel()
+
+	engine, err := NewEngine(filepath.Join("..", "..", "rules"))
+	if err != nil {
+		t.Fatalf("load bundled profiles: %v", err)
+	}
+
+	cases := []struct {
+		name    string
+		profile string
+		command string
+		allowed bool
+	}{
+		{name: "debian readonly apt list", profile: "debian-readonly", command: "apt list --installed", allowed: true},
+		{name: "debian readonly blocks install", profile: "debian-readonly", command: "apt install nginx", allowed: false},
+		{name: "debian ops allows restart", profile: "debian-ops", command: "systemctl restart nginx", allowed: true},
+		{name: "ubuntu readonly allows snap list", profile: "ubuntu-readonly", command: "snap list", allowed: true},
+		{name: "ubuntu ops allows snap restart", profile: "ubuntu-ops", command: "snap restart lxd", allowed: true},
+		{name: "rhel readonly allows dnf repolist", profile: "rhel-readonly", command: "dnf repolist", allowed: true},
+		{name: "rhel readonly blocks install", profile: "rhel-readonly", command: "dnf install nginx", allowed: false},
+		{name: "rhel ops allows service restart", profile: "rhel-ops", command: "systemctl restart sshd", allowed: true},
+	}
+
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			parsed, err := command.Parse(tc.command)
+			if err != nil {
+				t.Fatalf("parse command %q: %v", tc.command, err)
+			}
+
+			got := engine.Validate(tc.profile, parsed)
+			if got.Passed != tc.allowed {
+				t.Fatalf("profile %s command %q: got passed=%v reason=%q want %v", tc.profile, tc.command, got.Passed, got.Reason, tc.allowed)
+			}
+		})
 	}
 }

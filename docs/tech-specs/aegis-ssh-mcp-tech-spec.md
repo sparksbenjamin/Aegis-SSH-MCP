@@ -132,10 +132,16 @@ That last point matters: config changes apply to existing SSE sessions without r
 |-- keys/
 |   `-- .gitkeep
 |-- rules/
+|   |-- debian-ops.json
+|   |-- debian-readonly.json
 |   |-- kubernetes-readonly.json
 |   |-- logs-readonly.json
 |   |-- network-diagnostics.json
 |   |-- package-readonly.json
+|   |-- rhel-ops.json
+|   |-- rhel-readonly.json
+|   |-- ubuntu-ops.json
+|   |-- ubuntu-readonly.json
 |   |-- docker-ops.json
 |   |-- docker-readonly.json
 |   |-- readonly-safe.json

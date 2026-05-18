@@ -19,6 +19,12 @@ Rules are stored as JSON files in the `rules/` directory.
 The repo ships with these starter profiles:
 
 - `readonly-safe` for general Linux read-only inspection
+- `debian-readonly` for Debian package, service, and host inspection
+- `debian-ops` for Debian package updates and service operations
+- `ubuntu-readonly` for Ubuntu package, snap, service, and host inspection
+- `ubuntu-ops` for Ubuntu package, snap, and service operations
+- `rhel-readonly` for RHEL-like package, service, and host inspection
+- `rhel-ops` for RHEL-like package updates and service operations
 - `docker-readonly` for Docker host and container inspection
 - `docker-ops` for Docker administration on a Docker host
 - `systemd-ops` for service restarts, status checks, and journal access
@@ -344,10 +350,22 @@ If a command is blocked:
 5. Test a few obviously bad commands.
 6. Assign the new profile name to the target host config.
 
+If you are building for a mainstream Linux server, the distro starter profiles are a good first base:
+
+- Debian and Ubuntu profiles show `apt`, `dpkg`, `systemctl`, and `journalctl` patterns
+- Ubuntu adds `snap` examples
+- RHEL profiles show `dnf`, `yum`, `rpm`, and SELinux inspection patterns
+
 ## Related Files
 
 - [README.md](../README.md)
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](tech-specs/aegis-ssh-mcp-tech-spec.md)
 - [rules/readonly-safe.json](../rules/readonly-safe.json)
+- [rules/debian-readonly.json](../rules/debian-readonly.json)
+- [rules/debian-ops.json](../rules/debian-ops.json)
+- [rules/ubuntu-readonly.json](../rules/ubuntu-readonly.json)
+- [rules/ubuntu-ops.json](../rules/ubuntu-ops.json)
+- [rules/rhel-readonly.json](../rules/rhel-readonly.json)
+- [rules/rhel-ops.json](../rules/rhel-ops.json)
 - [rules/systemd-ops.json](../rules/systemd-ops.json)
 - [rules/kubernetes-readonly.json](../rules/kubernetes-readonly.json)
