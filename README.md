@@ -455,6 +455,85 @@ Additional configuration examples are available in:
 
 ---
 
+# Connect an MCP Client
+
+Once Aegis is running and a host config is loaded, each host becomes its own MCP SSE endpoint.
+
+For this config:
+
+```json
+{
+  "alias": "docker",
+  "api_keys": [
+    "change-me-docker-key"
+  ]
+}
+```
+
+connect to:
+
+```text
+http://YOUR_AEGIS_HOST:8443/mcp/docker/sse
+```
+
+or, if TLS is enabled:
+
+```text
+https://YOUR_AEGIS_HOST:8443/mcp/docker/sse
+```
+
+Every request must include:
+
+```text
+Authorization: Bearer change-me-docker-key
+```
+
+If you want an agent to access two different hosts, add Aegis twice in the client using:
+
+- one endpoint URL per host alias
+- one bearer token per host
+
+## Quick Connection Check
+
+You can confirm the SSE endpoint is reachable with:
+
+```bash
+curl -i -N \
+  -H "Authorization: Bearer change-me-docker-key" \
+  http://YOUR_AEGIS_HOST:8443/mcp/docker/sse
+```
+
+If auth is correct, Aegis should return `200 OK` and keep the SSE stream open.
+
+## LibreChat Example
+
+```yaml
+mcpSettings:
+  allowedDomains:
+    - "192.168.100.184"
+
+mcpServers:
+  aegis-docker:
+    type: sse
+    url: "http://192.168.100.184:8443/mcp/docker/sse"
+    headers:
+      Authorization: "Bearer change-me-docker-key"
+    timeout: 120000
+    initTimeout: 30000
+```
+
+The important parts are:
+
+- `type: sse`
+- the host-scoped URL ending in `/mcp/<alias>/sse`
+- the `Authorization: Bearer ...` header
+
+More connection details are available in:
+
+- [`docs/config.md`](docs/config.md)
+
+---
+
 # Security Model
 
 Aegis is designed around inherited infrastructure security.

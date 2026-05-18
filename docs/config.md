@@ -441,6 +441,58 @@ Produces:
 http://localhost:8443/mcp/prod_box/sse
 ```
 
+## Client Connection Examples
+
+For a host config like:
+
+```json
+{
+  "alias": "docker",
+  "api_keys": [
+    "change-me-docker-key"
+  ]
+}
+```
+
+the client should connect to:
+
+```text
+http://localhost:8443/mcp/docker/sse
+```
+
+and send:
+
+```text
+Authorization: Bearer change-me-docker-key
+```
+
+### Quick Reachability Check
+
+```bash
+curl -i -N \
+  -H "Authorization: Bearer change-me-docker-key" \
+  http://localhost:8443/mcp/docker/sse
+```
+
+### LibreChat Example
+
+```yaml
+mcpSettings:
+  allowedDomains:
+    - "192.168.100.184"
+
+mcpServers:
+  aegis-docker:
+    type: sse
+    url: "http://192.168.100.184:8443/mcp/docker/sse"
+    headers:
+      Authorization: "Bearer change-me-docker-key"
+    timeout: 120000
+    initTimeout: 30000
+```
+
+If you want one client or agent to access multiple hosts, add one MCP entry per host alias and token.
+
 ## Recommended Authoring Pattern
 
 For most deployments:
