@@ -57,6 +57,10 @@ What matters here:
 - clients must send the token as `Authorization: Bearer <token>`
 - if `host_key_fingerprint` is empty, Aegis will warn and use insecure host-key verification
 
+Full host config guide:
+
+- [docs/config.md](docs/config.md)
+
 ### 3. Add your SSH key
 
 Expected container path:
@@ -283,4 +287,5 @@ go build -buildvcs=false ./...
 The living technical notes are here:
 
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
+- [docs/config.md](docs/config.md)
 - [docs/rules.md](docs/rules.md)

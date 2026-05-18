@@ -105,6 +105,7 @@ That last point matters: config changes apply to existing SSE sessions without r
 |   |-- dell-r820.json
 |   `-- proxmox-node.json
 |-- docs/
+|   |-- config.md
 |   |-- rules.md
 |   `-- tech-specs/
 |       `-- aegis-ssh-mcp-tech-spec.md
@@ -329,6 +330,10 @@ Notes:
 - `api_keys` are effectively required for HTTPS SSE access because SSE startup requires at least one configured token somewhere in the config set
 - for HTTPS SSE, those configured values are expected to be sent as bearer tokens in the `Authorization` header
 - for HTTPS SSE, those configured values must not be reused across different host configs
+
+Operator note:
+
+- the practical host-config guide lives in [docs/config.md](../config.md)
 
 ## Tool Visibility Rules
 
