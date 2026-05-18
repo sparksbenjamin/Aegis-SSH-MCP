@@ -2,6 +2,25 @@
 
 This guide defines how we structure the repository `README.md` so it stays useful as a GitHub landing page instead of turning into a full manual.
 
+## What GitHub officially says
+
+GitHub's documentation says:
+
+- You can streamline Markdown by creating a collapsed section with the `<details>` tag.
+- A reader can expand it when they want more information.
+- You should use a `<summary>` tag to tell the reader what is inside.
+- You can put Markdown, headings, images, and code blocks inside the collapsed section.
+
+GitHub's example use is narrow and practical: hiding technical details that may not be relevant or interesting to every reader.
+
+GitHub does **not** say:
+
+- that every long README should aggressively use `<details>`
+- that `<details>` is better than deeper documentation
+- that you should avoid linking to other docs
+
+GitHub also says a README should focus on what the project does, why it is useful, how to get started, where to get help, and who maintains it, and that longer documentation is better suited for deeper docs.
+
 ## Purpose
 
 The README should help a first-time visitor answer these questions quickly:
@@ -24,7 +43,7 @@ That means:
 - collapse advanced or secondary material
 - let the reader choose when to expand for more detail
 
-GitHub supports `<details>` and recommends it for streamlining Markdown. This repo uses it to keep the README scrollable while still keeping important context nearby.
+This is a repo convention built on top of GitHub's support for collapsed sections. It is not a claim that GitHub requires this pattern for README files.
 
 ## What stays visible
 
@@ -41,7 +60,7 @@ These sections should stay expanded in the main README unless there is a strong 
 
 ## What should usually go in `<details>`
 
-Good candidates for collapsed sections:
+Good candidates for collapsed sections in this repository:
 
 - extra client examples
 - build-from-source instructions
@@ -63,6 +82,8 @@ If a section becomes long even after summarizing it, move the full explanation t
 - a direct link to the full document
 
 The README should stay a landing page. Deeper docs should carry the full reference load.
+
+This also matches GitHub's broader README guidance better than trying to force all long material into collapsed sections.
 
 ## `<details>` authoring rules
 
