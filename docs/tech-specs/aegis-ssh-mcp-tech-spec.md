@@ -136,16 +136,18 @@ That last point matters: config changes apply to existing SSE sessions without r
 |-- rules/
 |   |-- debian-ops.json
 |   |-- debian-readonly.json
+|   |-- docker-ops.json
+|   |-- docker-readonly.json
 |   |-- kubernetes-readonly.json
 |   |-- logs-readonly.json
 |   |-- network-diagnostics.json
 |   |-- package-readonly.json
+|   |-- proxmox-ops.json
+|   |-- proxmox-readonly.json
 |   |-- rhel-ops.json
 |   |-- rhel-readonly.json
 |   |-- ubuntu-ops.json
 |   |-- ubuntu-readonly.json
-|   |-- docker-ops.json
-|   |-- docker-readonly.json
 |   |-- readonly-safe.json
 |   `-- systemd-ops.json
 |-- .dockerignore
@@ -259,6 +261,7 @@ Validation order:
 Operator note:
 
 - the practical authoring guide for custom rule files lives in [docs/rules.md](../rules.md)
+- bundled starter profiles now include Debian, Ubuntu, RHEL, Docker, Kubernetes, Proxmox VE, logging, and network-focused examples
 
 ### `internal/ssh`
 
@@ -479,6 +482,7 @@ Completed:
 - updated docker compose for GHCR-based HTTPS SSE deployment
 - added an opt-in no-TLS HTTP SSE mode
 - updated README for the new operator flow
+- added bundled `proxmox-readonly` and `proxmox-ops` rule profiles
 - updated this tech spec for the new architecture
 
 Verification:

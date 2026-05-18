@@ -167,7 +167,7 @@ Detailed configuration examples are available in:
 
 - [`docs/rules.md`](docs/rules.md)
 
-Bundled examples now include Docker, Kubernetes, and distro-oriented Debian, Ubuntu, and RHEL read-only and ops profiles.
+Bundled examples now include Docker, Kubernetes, Proxmox VE, and distro-oriented Debian, Ubuntu, and RHEL read-only and ops profiles.
 
 ---
 

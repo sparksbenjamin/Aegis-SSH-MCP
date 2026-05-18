@@ -25,6 +25,8 @@ The repo ships with these starter profiles:
 - `ubuntu-ops` for Ubuntu package, snap, and service operations
 - `rhel-readonly` for RHEL-like package, service, and host inspection
 - `rhel-ops` for RHEL-like package updates and service operations
+- `proxmox-readonly` for Proxmox VE inventory, cluster, guest, and storage inspection
+- `proxmox-ops` for Proxmox VE guest lifecycle operations and service control
 - `docker-readonly` for Docker host and container inspection
 - `docker-ops` for Docker administration on a Docker host
 - `systemd-ops` for service restarts, status checks, and journal access
@@ -357,6 +359,7 @@ If you are building for a mainstream Linux server, the distro starter profiles a
 - Debian and Ubuntu profiles show `apt`, `dpkg`, `systemctl`, and `journalctl` patterns
 - Ubuntu adds `snap` examples
 - RHEL profiles show `dnf`, `yum`, `rpm`, and SELinux inspection patterns
+- Proxmox profiles show `pvesh`, `pvecm`, `qm`, `pct`, and `pvesm` patterns for virtualization hosts
 
 ## Related Files
 
@@ -369,5 +372,7 @@ If you are building for a mainstream Linux server, the distro starter profiles a
 - [rules/ubuntu-ops.json](../rules/ubuntu-ops.json)
 - [rules/rhel-readonly.json](../rules/rhel-readonly.json)
 - [rules/rhel-ops.json](../rules/rhel-ops.json)
+- [rules/proxmox-readonly.json](../rules/proxmox-readonly.json)
+- [rules/proxmox-ops.json](../rules/proxmox-ops.json)
 - [rules/systemd-ops.json](../rules/systemd-ops.json)
 - [rules/kubernetes-readonly.json](../rules/kubernetes-readonly.json)
