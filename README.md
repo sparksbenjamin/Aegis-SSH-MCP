@@ -219,6 +219,10 @@ Important behavior:
 - Aegis rebuilds a normalized shell-safe command before execution
 - if validation fails, SSH is never attempted
 
+Common operator questions:
+
+- [docs/FAQ.md](docs/FAQ.md)
+
 ## Optional Local HTTP Mode
 
 The checked-in Docker Compose example defaults to local or lab HTTP mode:
@@ -291,6 +295,7 @@ go build -buildvcs=false ./...
 
 The living technical notes are here:
 
+- [docs/FAQ.md](docs/FAQ.md)
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](docs/tech-specs/aegis-ssh-mcp-tech-spec.md)
 - [docs/config.md](docs/config.md)
 - [docs/rules.md](docs/rules.md)

@@ -105,6 +105,7 @@ That last point matters: config changes apply to existing SSE sessions without r
 |   |-- dell-r820.json
 |   `-- proxmox-node.json
 |-- docs/
+|   |-- FAQ.md
 |   |-- config.md
 |   |-- rules.md
 |   `-- tech-specs/
