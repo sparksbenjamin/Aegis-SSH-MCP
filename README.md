@@ -15,11 +15,7 @@ It is built for people who want agentic infrastructure workflows, but do **not**
 
 Aegis sits between your MCP client and your servers. It checks every requested command against your rules, opens a short-lived SSH session only when the command is allowed, returns the result, and disconnects.
 
-```text
-AI / MCP Client -> Aegis -> SSH -> Linux Host
-                   |
-                   +-- checks rules before connecting
-```
+<img width="1536" height="1024" alt="image" src="https://github.com/user-attachments/assets/6e4b1046-e1ec-4d9e-88d5-434c4c71b07e" />
 
 Aegis does not replace SSH, Linux permissions, sudo, or host hardening. It helps you keep those controls in charge while giving MCP clients a safer way to interact with real systems.
 
