@@ -249,9 +249,22 @@ Do not rely on Aegis alone for:
 - full RBAC
 - remote OS sandboxing
 
+## Why is the Docker image a "scratch" / distroless image?
+
+To eliminate the attack surface of the gateway itself.
+
+Aegis is built using a multi-stage Dockerfile where the final runtime stage uses `gcr.io/distroless/static-debian12:nonroot`. This is essentially a "scratch" (empty) image containing only the compiled static Aegis binary, minimal SSL certificates, and low-privilege system user entries:
+
+- **No Shells**: There is no `/bin/sh`, `/bin/bash`, `/bin/ash`, or other shell execution environments in the container.
+- **No Package Managers or Utilities**: There are no tools like `apt`, `apk`, `curl`, `wget`, `nc`, or `tar`.
+
+**The Security Benefit:**
+Even if an AI agent somehow manages to bypass command validation, or if a severe remote vulnerability is exploited in the Go binary or its dependencies, there are absolutely no local utilities or shells inside the container to execute. The agent has nothing it can run, download, or script within the Aegis container context itself, severely limiting the impact of any container escape or compromise attempts.
+
 ## Related Docs
 
 - [README.md](../README.md)
 - [docs/config.md](config.md)
 - [docs/rules.md](rules.md)
+- [docs/security.md](security.md)
 - [docs/tech-specs/aegis-ssh-mcp-tech-spec.md](tech-specs/aegis-ssh-mcp-tech-spec.md)
