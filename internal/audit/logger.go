@@ -16,6 +16,7 @@ import (
 type Entry struct {
 	Timestamp        string `json:"timestamp"`
 	AgentAlias       string `json:"agent_alias"`
+	TargetHost       string `json:"target_host,omitempty"`
 	CommandRequested string `json:"command_requested"`
 	// ValidationResult is one of: PASS | FAIL | EXEC_ERROR | SYSTEM
 	ValidationResult string `json:"validation_result"`

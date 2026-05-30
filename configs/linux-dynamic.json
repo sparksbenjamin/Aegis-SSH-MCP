@@ -1,0 +1,18 @@
+{
+  "config_type": "dynamic",
+  "alias": "linux-dynamic",
+  "ssh_port": 22,
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/linux-dynamic.pem",
+  "rule_profile": "readonly-safe",
+  "timeout_seconds": 30,
+  "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-linux-dynamic-key"
+  ],
+  "stealth_mode": false,
+  "fake_response": "",
+  "redaction_enabled": false,
+  "redaction_patterns": []
+}

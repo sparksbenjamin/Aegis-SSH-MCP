@@ -16,8 +16,20 @@ const (
 	AuthMethodPassword AuthMethod = "password"
 )
 
+// ConfigType controls whether a config targets one fixed host or accepts the
+// SSH host as a tool-call argument.
+type ConfigType string
+
+const (
+	ConfigTypeHost    ConfigType = "host"
+	ConfigTypeDynamic ConfigType = "dynamic"
+)
+
 // HostConfig is the structure of a single JSON file in the configs directory.
 type HostConfig struct {
+	ConfigType ConfigType `json:"config_type"`
+	TypeAlias  ConfigType `json:"type,omitempty"`
+
 	Alias   string `json:"alias"`
 	HostIP  string `json:"host_ip"`
 	SSHPort int    `json:"ssh_port"`
@@ -43,10 +55,27 @@ type HostConfig struct {
 
 // Validate normalizes defaults and returns an error if any required field is absent.
 func (h *HostConfig) Validate() error {
+	if h.ConfigType == "" && h.TypeAlias != "" {
+		h.ConfigType = h.TypeAlias
+	}
+	if h.ConfigType == "" {
+		h.ConfigType = ConfigTypeHost
+	}
+	if h.TypeAlias != "" && h.ConfigType != h.TypeAlias {
+		return fmt.Errorf("config_type and type must match when both are set")
+	}
+	if h.ConfigType != ConfigTypeHost && h.ConfigType != ConfigTypeDynamic {
+		return fmt.Errorf(
+			"config_type must be %q or %q, got %q",
+			ConfigTypeHost,
+			ConfigTypeDynamic,
+			h.ConfigType,
+		)
+	}
 	if strings.TrimSpace(h.Alias) == "" {
 		return fmt.Errorf("alias is required")
 	}
-	if strings.TrimSpace(h.HostIP) == "" {
+	if h.ConfigType == ConfigTypeHost && strings.TrimSpace(h.HostIP) == "" {
 		return fmt.Errorf("host_ip is required")
 	}
 	if strings.TrimSpace(h.SSHUser) == "" {

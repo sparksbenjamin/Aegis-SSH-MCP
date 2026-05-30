@@ -165,27 +165,51 @@ func (a *AegisServer) registerHostTool(cfg *config.HostConfig) {
 		return
 	}
 
-	tool := mcp.NewTool(
-		toolName,
-		mcp.WithDescription(fmt.Sprintf(
-			"[Aegis] Execute a single command on host %q (%s@%s:%d). Rule profile: %q. Commands are validated before execution.",
-			cfg.Alias,
-			cfg.SSHUser,
-			cfg.HostIP,
-			cfg.SSHPort,
-			cfg.RuleProfile,
-		)),
-		mcp.WithString(
-			"command",
+	toolOptions := []mcp.ToolOption{
+		mcp.WithDescription(a.toolDescription(cfg)),
+	}
+	if cfg.ConfigType == config.ConfigTypeDynamic {
+		toolOptions = append(toolOptions, mcp.WithString(
+			"host",
 			mcp.Required(),
 			mcp.Description(
-				"The command to execute on the remote host. Aegis parses it into argv, validates the executable and arguments, then executes a normalized shell-safe form. Pipes through safe text filters like grep/head/tail are supported. Redirects, chaining, and command substitution are intentionally blocked.",
+				"The SSH target hostname or IP address to connect to for this request. The configured credentials and rule profile are still enforced.",
 			),
+		))
+	}
+	toolOptions = append(toolOptions, mcp.WithString(
+		"command",
+		mcp.Required(),
+		mcp.Description(
+			"The command to execute on the remote host. Aegis parses it into argv, validates the executable and arguments, then executes a normalized shell-safe form. Pipes through safe text filters like grep/head/tail are supported. Redirects, chaining, and command substitution are intentionally blocked.",
 		),
-	)
+	))
+
+	tool := mcp.NewTool(toolName, toolOptions...)
 
 	a.mcpSrv.AddTool(tool, a.makeToolHandler(cfg.Alias))
 	fmt.Fprintf(os.Stderr, "[AEGIS] Tool registered: %s\n", toolName)
+}
+
+func (a *AegisServer) toolDescription(cfg *config.HostConfig) string {
+	if cfg.ConfigType == config.ConfigTypeDynamic {
+		return fmt.Sprintf(
+			"[Aegis] Execute a single command on a caller-provided SSH host using dynamic profile %q (%s@<host>:%d). Rule profile: %q. Commands are validated before execution.",
+			cfg.Alias,
+			cfg.SSHUser,
+			cfg.SSHPort,
+			cfg.RuleProfile,
+		)
+	}
+
+	return fmt.Sprintf(
+		"[Aegis] Execute a single command on host %q (%s@%s:%d). Rule profile: %q. Commands are validated before execution.",
+		cfg.Alias,
+		cfg.SSHUser,
+		cfg.HostIP,
+		cfg.SSHPort,
+		cfg.RuleProfile,
+	)
 }
 
 // syncConfigs rescans the configs directory and applies any adds, updates,
@@ -307,10 +331,33 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			), nil
 		}
 
+		a.mu.RLock()
+		cfg, exists := a.configs[alias]
+		a.mu.RUnlock()
+		if !exists {
+			return mcp.NewToolResultError(
+				fmt.Sprintf("host %q has been removed from the Aegis registry", alias),
+			), nil
+		}
+
+		execCfg, targetHost, err := executionConfigForRequest(cfg, req)
+		if err != nil {
+			logEntry := audit.Entry{
+				AgentAlias:       alias,
+				CommandRequested: rawCommand,
+				ValidationResult: "FAIL",
+				ValidationReason: err.Error(),
+				DurationMs:       time.Since(start).Milliseconds(),
+			}
+			a.logger.Log(logEntry)
+			return mcp.NewToolResultError("AEGIS BLOCKED - " + err.Error()), nil
+		}
+
 		parsed, err := command.Parse(rawCommand)
 		if err != nil {
 			logEntry := audit.Entry{
 				AgentAlias:       alias,
+				TargetHost:       targetHost,
 				CommandRequested: rawCommand,
 				ValidationResult: "FAIL",
 				ValidationReason: err.Error(),
@@ -321,18 +368,10 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("AEGIS BLOCKED - " + err.Error()), nil
 		}
 
-		a.mu.RLock()
-		cfg, exists := a.configs[alias]
-		a.mu.RUnlock()
-		if !exists {
-			return mcp.NewToolResultError(
-				fmt.Sprintf("host %q has been removed from the Aegis registry", alias),
-			), nil
-		}
-
-		validation := a.ruleEngine.Validate(cfg.RuleProfile, parsed)
+		validation := a.ruleEngine.Validate(execCfg.RuleProfile, parsed)
 		logEntry := audit.Entry{
 			AgentAlias:       alias,
+			TargetHost:       targetHost,
 			CommandRequested: rawCommand,
 			ValidationResult: "PASS",
 			ValidationReason: validation.Reason,
@@ -343,9 +382,9 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			logEntry.DurationMs = time.Since(start).Milliseconds()
 			a.logger.Log(logEntry)
 
-			if cfg.StealthMode {
+			if execCfg.StealthMode {
 				logEntry.StealthMode = true
-				fakeResp := cfg.FakeResponse
+				fakeResp := execCfg.FakeResponse
 				if fakeResp == "" {
 					fakeResp = "bash: command not found"
 				}
@@ -355,7 +394,7 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 			return mcp.NewToolResultError("AEGIS BLOCKED - " + validation.Reason), nil
 		}
 
-		result, err := sshexec.Execute(cfg, parsed.Normalized)
+		result, err := sshexec.Execute(execCfg, parsed.Normalized)
 		if err != nil {
 			logEntry.ValidationResult = "EXEC_ERROR"
 			logEntry.ValidationReason = err.Error()
@@ -375,6 +414,22 @@ func (a *AegisServer) makeToolHandler(alias string) server.ToolHandlerFunc {
 
 		return mcp.NewToolResultText(formatOutput(result)), nil
 	}
+}
+
+func executionConfigForRequest(cfg *config.HostConfig, req mcp.CallToolRequest) (*config.HostConfig, string, error) {
+	execCfg := *cfg
+	if cfg.ConfigType != config.ConfigTypeDynamic {
+		return &execCfg, execCfg.HostIP, nil
+	}
+
+	rawHost, _ := req.Params.Arguments["host"].(string)
+	targetHost := strings.TrimSpace(rawHost)
+	if targetHost == "" {
+		return nil, "", fmt.Errorf("'host' parameter must be a non-empty string")
+	}
+
+	execCfg.HostIP = targetHost
+	return &execCfg, targetHost, nil
 }
 
 func (a *AegisServer) aliasForAPIKey(key string) (string, bool) {

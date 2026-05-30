@@ -35,6 +35,39 @@ func TestLoadHostConfigAppliesDefaults(t *testing.T) {
 	if cfg.TimeoutSeconds != 30 {
 		t.Fatalf("expected default timeout 30, got %d", cfg.TimeoutSeconds)
 	}
+	if cfg.ConfigType != ConfigTypeHost {
+		t.Fatalf("expected default config type %q, got %q", ConfigTypeHost, cfg.ConfigType)
+	}
+}
+
+func TestLoadDynamicConfigAllowsMissingHostIP(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "dynamic.json")
+	err := os.WriteFile(path, []byte(`{
+  "config_type": "dynamic",
+  "alias": "linux-readonly",
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/ops.pem",
+  "rule_profile": "readonly-safe"
+}`), 0o600)
+	if err != nil {
+		t.Fatalf("write dynamic config: %v", err)
+	}
+
+	cfg, err := LoadHostConfig(path)
+	if err != nil {
+		t.Fatalf("load dynamic config: %v", err)
+	}
+
+	if cfg.ConfigType != ConfigTypeDynamic {
+		t.Fatalf("expected dynamic config type, got %q", cfg.ConfigType)
+	}
+	if cfg.HostIP != "" {
+		t.Fatalf("expected dynamic config to keep empty host_ip, got %q", cfg.HostIP)
+	}
 }
 
 func TestScanConfigDirRejectsDuplicateAliases(t *testing.T) {

@@ -10,7 +10,7 @@ Aegis-SSH-MCP exposes approved SSH actions to MCP clients while acting as a comm
 Core flow:
 
 1. Receive an MCP tool call.
-2. Map that tool call to a configured host alias.
+2. Map that tool call to a configured fixed host alias or dynamic profile alias.
 3. Parse the command into executable plus arguments.
 4. Allow limited pipelines through safe text filters for one-shot output shaping.
 5. Reject redirects, chaining, and command substitution.
@@ -27,6 +27,10 @@ The server exposes:
 
 - one host tool per config file: `aegis_ssh_<alias>`
 - one status tool: `aegis_status`
+
+Config files can be fixed host configs or dynamic profile configs. Dynamic
+profiles use the same tool-name pattern, but add a required `host` argument to
+the MCP tool schema and copy that value into a temporary execution config.
 
 Primary deployment transport:
 
@@ -319,6 +323,7 @@ Host config schema:
 
 ```json
 {
+  "config_type": "host",
   "alias": "my-server",
   "host_ip": "192.168.1.100",
   "ssh_port": 22,
@@ -339,10 +344,37 @@ Host config schema:
 }
 ```
 
+Dynamic profile schema:
+
+```json
+{
+  "config_type": "dynamic",
+  "alias": "linux-dynamic",
+  "ssh_port": 22,
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/linux-dynamic.pem",
+  "password": "",
+  "rule_profile": "readonly-safe",
+  "timeout_seconds": 30,
+  "stealth_mode": false,
+  "fake_response": "",
+  "redaction_enabled": false,
+  "redaction_patterns": [],
+  "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-linux-dynamic-key"
+  ]
+}
+```
+
 Notes:
 
+- `config_type` defaults to `host` for backward compatibility
+- `type` is accepted as a short alias for `config_type`
 - `alias` must be unique
 - sanitized endpoint aliases must also be unique
+- `host_ip` is required for `host` configs and omitted for `dynamic` configs
 - `rule_profile` must match a profile in `rules/`
 - `api_keys` are normalized with trimming and de-duplication
 - `api_keys` are optional for stdio mode
@@ -364,6 +396,7 @@ For authenticated SSE:
 
 - endpoint path is `/mcp/<sanitized-host-alias>/sse`
 - `tools/list` is filtered to the single allowed host for that endpoint/token pair
+- dynamic profile endpoints still expose only that profile's tool, but the tool schema includes a required `host` argument
 - authenticated requests are expected to use `Authorization: Bearer <token>`
 - `aegis_status` remains visible
 - `aegis_status` only lists the host for that endpoint
@@ -383,6 +416,7 @@ Behavior:
 - config changes trigger a full config rescan
 - rule changes trigger a full rules reload
 - host config updates refresh live config without duplicating the MCP tool registration
+- config type changes for an existing alias update the stored config, but clients may need to refresh their tool schema
 - removed hosts are deleted from the in-memory registry
 - token-to-host mappings are rebuilt on every config sync
 - host-endpoint routing is rebuilt on every config sync

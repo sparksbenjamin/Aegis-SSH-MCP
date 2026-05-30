@@ -231,11 +231,11 @@ No persistent shell is handed to the agent.
 
 ## Core concepts
 
-### One config equals one host
+### Configs can be fixed hosts or dynamic profiles
 
-Each JSON file in [`configs/`](configs/) describes one remote host.
+Each JSON file in [`configs/`](configs/) describes either one fixed remote host or one dynamic SSH profile.
 
-That one config creates:
+A fixed host config creates:
 
 - one MCP endpoint
 - one host-scoped SSH tool
@@ -249,6 +249,31 @@ For example, a host with alias `docker` becomes:
 ```
 
 If one agent needs access to two hosts, add Aegis twice in the MCP client: one endpoint and one token per host alias.
+
+A dynamic profile uses the same rule and SSH execution engine, but the MCP tool call supplies the host:
+
+```json
+{
+  "config_type": "dynamic",
+  "alias": "linux-dynamic",
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/linux-dynamic.pem",
+  "rule_profile": "readonly-safe",
+  "api_keys": [
+    "change-me-linux-dynamic-key"
+  ]
+}
+```
+
+That profile creates `aegis_ssh_linux-dynamic` with two required arguments:
+
+```json
+{
+  "host": "192.168.1.42",
+  "command": "uptime"
+}
+```
 
 ### Rules decide what can run
 

@@ -4,17 +4,17 @@ This guide explains the JSON files in `configs/` and what each option does.
 
 The important model is:
 
-- one `.json` file = one remote host
-- one host config = one MCP endpoint
-- one host config = one host-scoped SSH tool
-- one host config = one rule profile assignment
-- one host config = one set of bearer tokens for that one host
+- one `.json` file = one fixed host config or one dynamic host profile
+- one config = one MCP endpoint
+- one config = one SSH tool
+- one config = one rule profile assignment
+- one config = one set of bearer tokens for that endpoint
 
 ## What a Host Config Controls
 
 Each host config tells Aegis:
 
-- which machine to connect to
+- which machine to connect to, or whether the tool call must provide the host
 - which SSH credential method to use
 - which rule profile to enforce
 - which bearer tokens can reach that host's MCP endpoint
@@ -55,6 +55,7 @@ Key-based SSH example:
 
 ```json
 {
+  "config_type": "host",
   "alias": "my-server",
   "host_ip": "192.168.1.100",
   "ssh_port": 22,
@@ -69,6 +70,27 @@ Key-based SSH example:
   ]
 }
 ```
+
+Dynamic SSH profile example:
+
+```json
+{
+  "config_type": "dynamic",
+  "alias": "linux-dynamic",
+  "ssh_port": 22,
+  "ssh_user": "ops",
+  "auth_method": "key",
+  "key_path": "/keys/linux-dynamic.pem",
+  "rule_profile": "readonly-safe",
+  "timeout_seconds": 30,
+  "host_key_fingerprint": "",
+  "api_keys": [
+    "change-me-linux-dynamic-key"
+  ]
+}
+```
+
+This creates a tool named `aegis_ssh_linux-dynamic` that accepts both `host` and `command`.
 
 Password-based SSH example:
 
@@ -90,6 +112,28 @@ Password-based SSH example:
 ```
 
 ## Supported Fields
+
+### `config_type`
+
+Optional.
+
+Allowed values:
+
+- `host`
+- `dynamic`
+
+Default:
+
+```json
+"host"
+```
+
+Behavior:
+
+- `host` configs require `host_ip` and keep the existing one-config-per-host model
+- `dynamic` configs omit `host_ip`; the MCP tool call supplies the target host through a required `host` argument
+
+The shorter JSON field name `type` is also accepted as an alias for `config_type`.
 
 ### `alias`
 
@@ -142,6 +186,8 @@ Those two would both sanitize to the same endpoint alias.
 Required.
 
 This is the SSH target hostname or IP address.
+
+Required for `host` configs. Omit it for `dynamic` configs.
 
 Example:
 
@@ -492,6 +538,21 @@ mcpServers:
 ```
 
 If you want one client or agent to access multiple hosts, add one MCP entry per host alias and token.
+
+For a dynamic config, the endpoint still follows the config alias:
+
+```text
+http://localhost:8443/mcp/linux-dynamic/sse
+```
+
+The dynamic tool call includes the target host:
+
+```json
+{
+  "host": "192.168.1.42",
+  "command": "uptime"
+}
+```
 
 ## Recommended Authoring Pattern
 
